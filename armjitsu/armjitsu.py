@@ -13,7 +13,6 @@ from unicorn.arm_const import *
 from misc_utils import *
 
 ADDRESS = 0x10000
-ARM_CODE1 = b"\x37\x00\xa0\xe3\x03\x10\x42\xe0" # mov r0, #0x37; sub r1, r2, r3
 
 
 ARM_CODE2 = ("\x01\x60\x8f\xe2"
@@ -44,49 +43,86 @@ class ArmCPU(object):
     def __init__(self, address, code):
 
         self.code = code
-        self.base_address = address
+
+        # Where our code execution will begin
+        self.pc = address
+
         self.break_points = {}
         self.sys_calls = []
 
         self.running = False
+
+        # Are we currently on breakpoint?
         self.on_breakpoint = False
         self.set_bp_hook = False
+
+        # Jump tracking state
+        self._prev = None
+        self._prevsize = None
+        self._curr = None
 
         try:
 
             # Init our ARM emulator with code at given address
             self.emu = Uc(UC_ARCH_ARM, UC_MODE_ARM)
             self.emu.mem_map(self.address, 2 * 1024 * 1024)
-            self.emu.mem_write(self.address,self.code)
+            self.emu.mem_write(self.address, self.code)
 
-            # initialize machine registers
-            # self.emu.reg_write(UC_ARM_REG_R0, 0x0)
-            # self.emu.reg_write(UC_ARM_REG_R2, 0x0)
-            # self.emu.reg_write(UC_ARM_REG_R3, 0x0)
             self.emu.reg_write(UC_ARM_REG_APSR, 0x000000) #All application flags turned on
-
-            # Set up hooks
-            self.emu.hook_add(UC_HOOK_CODE, hook_code_dbg_break, user_data=self.break_points)
 
         except UcError as e:
             print "ERROR: %s", e
 
+        # Set up hooks
+        self.hook_add(UC_HOOK_CODE, hook_code_trace, user_data=self.break_points)
+
+    def start(self, *args, **kwargs):
+
+        if not self.running:
+            self.running = True
+            try:
+                return self.emu.emu_start(*args, **kwargs)
+            except UcError as e:
+                print "[-] Error: %s" % e
+
+
+    def stop(self, *args, **kwargs):
+
+        if self.running:
+            self.running = False
+            try:
+                return self.emu.emu_stop(*args, **kwargs)
+            except UcError as e:
+                print "[-] Error: %s" % e
+
+
+    def update_pc(self, pc=None):
+        if pc is None:
+            self.pc = self.emu.reg_read(UC_ARM_REG_PC)
 
     def dump_state(self):
         self.__dump_regs()
 
-    def run(self):
-        # Begin execution
-        if not self.running:
-            self.running = True
-            self.emu.emu_start(self.address, self.address + len(self.code))
+    def single_step(self, pc=None):
+        self._singlestep = (None, None)
 
-    def stop(self):
+        pc = pc or self.pc
 
         try:
-            self.emu.emu_stop()
+            self.emu.hook_add(UC_HOOK_CODE, self.single_step_hook_code)
         except UcError as e:
-            print "[-] Error: %s" % e
+            self._singlestep = (None, None)
+
+        return self._singlestep
+
+    def single_step_iter(self, pc=None):
+        s = self.single_step(pc)
+        while s:
+            yield s
+            s = self.single_step(pc)
+
+    def single_step_hook_code(self, uc, address, size, user_data):
+        self._singlestep = (address, size)
 
 
     def set_bp(self, address=None):
@@ -104,7 +140,13 @@ class ArmCPU(object):
             self.id += 1
             print "Setting breakpoint {} = {}".format(self.id, address)
 
+    # -- Methods to add and remove hooks
 
+    def hook_add(self, *a, **kw):
+        return self.emu.hook_add(*a, **kw)
+
+    def hook_del(self, *a, **kw):
+        return self.emu.hook_del(*a, **kw)
 
 
     # -- Our "private" methods
@@ -144,15 +186,12 @@ class ArmjitsuCmd(Cmd):
     """
 
     # cmd2 properties
-    maxrepeats = 3
-    Cmd.settable.append('maxrepeats')
     prompt = "(armjitsu) "
     ruler = "-"
 
     # Our instance of ArmDBG
     arm_dbg = ArmCPU(address=0x10000, ARM_CODE2)
 
-    global BREAK_HIT
 
     def do_EOF(self, line):
         return True
@@ -161,30 +200,20 @@ class ArmjitsuCmd(Cmd):
 
     def do_exit(self, line):
         print "Exiting..."
-        if ArmjitsuCmd.arm_dbg.cpu.emu_running:
-            ArmjitsuCmd.arm_dbg.stop()
         return True
 
     def do_run(self, line):
-        if BREAK_HIT:
-            arm_dbg.cpu.context_restore()
-            arm_dbg.cpu.emu_start()
-
-        arm_dbg.run()
+        ArmjitsuCmd.arm_dbg.start()
 
     def do_stop(self, line):
-        if arm_dbg.emu_running:
-           arm_dbg.stop()
-        else:
-            print "[*] Emulation already halted..."
+        pass
 
     def do_continue(self, line):
         pass
 
     def do_break(self, line):
         address = int(line, 16)
-        arm_dbg.set_bp(address)
-
+        ArmjitsuCmd.arm_dbg.set_bp(address)
 
     def do_info(self, line):
         pass
@@ -195,37 +224,36 @@ class ArmjitsuCmd(Cmd):
 
 
 # -- Hooks
-def hook_code(uc, address, size, user_data):
-    print(">>> Tracing instruction at 0x%x, instruction size = 0x%x" %(address, size))
-    # read this instruction code from memory
-    tmp = uc.mem_read(address, size)
-    print "*** EIP = %x *** :" %(address),
-    for i in tmp:
-        print " %02x" %i
-    print("")
+# def hook_code(uc, address, size, user_data):
+#     print(">>> Tracing instruction at 0x%x, instruction size = 0x%x" %(address, size))
+#     # read this instruction code from memory
+#     tmp = uc.mem_read(address, size)
+#     print "*** EIP = %x *** :" %(address),
+#     for i in tmp:
+#         print " %02x" %i
+#     print("")
 
 
-def hook_code_syscall(uc, addresas, size, user_data):
-    pass
+# def hook_code_syscall(uc, addresas, size, user_data):
+#     pass
 
-def hook_code_dbg_break(uc, address, size, user_data):
+def hook_code_trace(uc, address, size, user_data):
 
-    global BREAK_HIT
-
+    # Handle breakpoints
     if address in user_data.values():
-
-        BREAK_HIT = True
         try:
-            print "BREAK POINT HIT @ filler"
-            tmp = uc.mem_read(address, size)
+            print "BREAK POINT HIT @ 0x{:08x}".format(address)
+            mem_tmp = uc.mem_read(address, size)
             print "*** PC = %x *** :" %(address),
-            for i in tmp:
+            for i in mem_tmp:
                 print " %02x" %i
             print("")
-            user_in = raw_input("Continue? ")
-            BREAK_HIT = True
         except UcError as e:
             print "ERROR: %s", e
+
+
+
+
     return True
 
 
@@ -234,14 +262,7 @@ def hook_code_dbg_step(uc, address, size, user_data):
 
 def main(args):
 
-    # Obviously all will be refactored heavily
-
-    global ARM_CODE1
-    if len(args) > 1:
-        print "[*] Reading ARM code from file..."
-        fd = open(args[1], "rb")
-        ARM_CODE1 = fd.read()
-        fd.close()
+    # argument parsing
 
     print "Welcome to ARMjitsu - The simple ARM emulator!\n"
 
