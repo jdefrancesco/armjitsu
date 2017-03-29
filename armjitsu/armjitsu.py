@@ -37,9 +37,21 @@ EMULATION_STOPPED = False
 
 
 class ArmCPU(object):
-    """ArmCPU Class acts as primary emulator for ARM code.
+    """ArmCPU class provides abstraction to unicorn emulation object.
+
+    Args:
+        address (int): Base address code will be loaded into and subsequently executed from.
+        code (byte array): Actual code to run in emulator.
+
+    Attributes:
+        code (str): Human readable string describing the exception.
+        pc (int): Exception error code.
+        break_points(dict):
+        sys_calls(list):
 
     """
+
+
     def __init__(self, address, code):
 
         self.code = code
@@ -77,7 +89,6 @@ class ArmCPU(object):
         self.hook_add(UC_HOOK_CODE, hook_code_trace, user_data=self.break_points)
 
     def start(self, *args, **kwargs):
-
         if not self.running:
             self.running = True
             try:
@@ -87,7 +98,6 @@ class ArmCPU(object):
 
 
     def stop(self, *args, **kwargs):
-
         if self.running:
             self.running = False
             try:
@@ -223,20 +233,6 @@ class ArmjitsuCmd(Cmd):
 
 
 
-# -- Hooks
-# def hook_code(uc, address, size, user_data):
-#     print(">>> Tracing instruction at 0x%x, instruction size = 0x%x" %(address, size))
-#     # read this instruction code from memory
-#     tmp = uc.mem_read(address, size)
-#     print "*** EIP = %x *** :" %(address),
-#     for i in tmp:
-#         print " %02x" %i
-#     print("")
-
-
-# def hook_code_syscall(uc, addresas, size, user_data):
-#     pass
-
 def hook_code_trace(uc, address, size, user_data):
 
     # Handle breakpoints
@@ -252,8 +248,6 @@ def hook_code_trace(uc, address, size, user_data):
             print "ERROR: %s", e
 
 
-
-
     return True
 
 
@@ -265,6 +259,20 @@ def main(args):
     # argument parsing
 
     print "Welcome to ARMjitsu - The simple ARM emulator!\n"
+
+    parser = argparse.ArgumentParser(description="ARMulator - ARM 32-bit emulator for instropection into arcane binaries")
+
+    parser.add_argument("-t", "--tui", action="store_true", dest="tui_switch",
+                        default=False, help="Launch ARMjitsu with ncurses Textual User Interface")
+    parser.add_argument("-l", "--load", type=str, dest="",
+                        help="Specify name of ARM binary file to load for emulation.")
+    parser.add_argument("-m", "--machine", dest="machine_code", help="Provide raw ARM32 machine code to emulator")
+    parser.add_argument("-e", "--emutest", help="For developer use. ARMjitsu will emulate machine code embedded in source.")
+    parser.add_argument("-v", "--version", action="version", version="")
+    parser.add_arguments("-s", "--snapshot", dest="snapshot_file", help="")
+
+    results = parser.parse_args()
+
 
     # Command dispatch loop
     a = ArmjitsuCmd()

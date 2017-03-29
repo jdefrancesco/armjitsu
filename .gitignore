@@ -90,6 +90,7 @@ ENV/
 # Spyder project settings
 .spyderproject
 
+.html
 # Rope project settings
 .ropeproject
 .DS_Store
