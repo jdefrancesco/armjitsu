@@ -88,7 +88,22 @@ class ArmCPU(object):
         # Set up hooks
         self.hook_add(UC_HOOK_CODE, hook_code_trace, user_data=self.break_points)
 
+
     def start(self, *args, **kwargs):
+        """start() will start the emulator and have it execute supplied machine code.
+
+        This method first determines if the emulator is already running, if so it continues to run.
+        If emulator has not been started yet, this method will kick it off.
+
+        Args:
+            args (list): list of needed parameters to pass to emu_start() method as first argument.
+            kwargs (dict): dictionary parameter passed to emu_start() as second argument.
+
+        Side effects:
+            1. Sets self.running = True, if we started emulator.
+            2. Starts emulator is it is not already in action.
+        """
+
         if not self.running:
             self.running = True
             try:
@@ -98,6 +113,20 @@ class ArmCPU(object):
 
 
     def stop(self, *args, **kwargs):
+        """stop() will stop the emulator.
+
+        This method first determines if the emulator is already running, if execution is halted.
+        If emulator is not running the emulator remains in stopped state.
+
+        Args:
+            args (list): list of needed parameters to pass to emu_stop() method as first argument.
+            kwargs (dict): dictionary parameter passed to emu_stop() as second argument.
+
+        Side effects:
+            1. Sets self.running = False, if we stopped the emulator.
+            2. Stops emulator if it was currently running.
+        """
+
         if self.running:
             self.running = False
             try:
@@ -107,11 +136,42 @@ class ArmCPU(object):
 
 
     def update_pc(self, pc=None):
+        """"update_pc() updates PC register with a value supplied as an argument.
+
+        Args:
+            pc(int): Address to update PC with.
+
+        Returns:
+            Current value of PC register
+
+        Side Effects:
+            PC of emulator is updated, thus execution flow may change.
+
+        """
         if pc is None:
-            self.pc = self.emu.reg_read(UC_ARM_REG_PC)
+            pc = self.emu.reg_read(UC_ARM_REG_PC)
+        self.emu.reg_write(UC_ARM_REG_PC, pc)
+
+        return self.emu.reg_read(UC_ARM_REG_PC)
 
     def dump_state(self):
-        self.__dump_regs()
+        """dump_state() dumps state of emulation machine.
+
+        This method should dump the context of the emulator. Register values, backtrace, and current instructions executed
+        should all be printed to screen output.
+
+
+        Side Effects:
+            Dumps emulator context to screen.
+
+        Example:
+            >>> inst.dump_state()
+            ... REG VALUES, BACKTRACE, INSTRUCTIONS
+
+        """
+        self._dump_regs()
+        # TODO add backtrace, instruction disassembly
+
 
     def single_step(self, pc=None):
         self._singlestep = (None, None)
@@ -125,11 +185,13 @@ class ArmCPU(object):
 
         return self._singlestep
 
+
     def single_step_iter(self, pc=None):
         s = self.single_step(pc)
         while s:
             yield s
             s = self.single_step(pc)
+
 
     def single_step_hook_code(self, uc, address, size, user_data):
         self._singlestep = (address, size)
@@ -161,7 +223,7 @@ class ArmCPU(object):
 
     # -- Our "private" methods
 
-    def __dump_regs(self):
+    def _dump_regs(self):
         """dump_regs method
 
         Dump state of ARM registers to stdout
@@ -184,9 +246,6 @@ class ArmCPU(object):
             print print_string
 
         print ""
-
-
-
 
 
 class ArmjitsuCmd(Cmd):
