@@ -62,18 +62,12 @@ class ArmCPU(object):
         self.break_points = {}
         self.sys_calls = []
 
-        self.running = False
-
-        # Are we currently on breakpoint?
-        self.on_breakpoint = False
-        self.set_bp_hook = False
 
         # Jump tracking state
         self._prev = None
         self._prevsize = None
         self._curr = None
 
-        self.context = None
 
         try:
 
@@ -85,10 +79,30 @@ class ArmCPU(object):
             self.emu.reg_write(UC_ARM_REG_APSR, 0x000000) #All application flags turned on
 
             self.hook_add(UC_HOOK_CODE, self.trace_hook, self.break_points)
-            self.emu_start(self.pc, self.pc + len(self.code), count=0)
+
         except UcError as e:
             print "ERROR: %s", e
 
+    def cmd_set_bp(self, address=None):
+        """set_bp
+
+        set break point by address.
+        """
+
+        if not address:
+            print "[*] Specify address where break point should be set"
+            return
+
+        if address not in self.break_points.values():
+            self.break_points[self.id] = address
+            self.id += 1
+            print "Setting breakpoint {} = {}".format(self.id, address)
+
+    def cmd_get_regs(self):
+        pass
+
+    def cmd_start(self):
+        pass
 
     def emu_start(self, *args, **kwargs):
         """emu_start() will start the emulator and have it execute supplied machine code.
@@ -166,7 +180,6 @@ class ArmCPU(object):
 
         """
         self._dump_regs()
-        # TODO add backtrace, instruction disassembly
 
 
     def single_step(self, pc=None):
@@ -193,48 +206,6 @@ class ArmCPU(object):
         print "Single stepping: 0x{:08}".format(address)
         self._singlestep = (address, size)
 
-
-    def set_bp(self, address=None):
-        """set_bp
-
-        set break point by address.
-        """
-
-        if not address:
-            print "[*] Specify address where break point should be set"
-            return
-
-        if address not in self.break_points.values():
-            self.break_points[self.id] = address
-            self.id += 1
-            print "Setting breakpoint {} = {}".format(self.id, address)
-
-
-    def _dump_regs(self):
-        """dump_regs method
-
-        Dump state of ARM registers to stdout
-        """
-
-        # Dump our special named registers first
-        print "[*] SL = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_SL))
-        print "[*] FP = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_FP))
-        print "[*] IP = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_IP))
-        print "[*] SP = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_SP))
-        print "[*] LR = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_LR))
-        print "[*] PC = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_PC))
-        print "[*] CPSR = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_CPSR))
-
-        print ""
-
-        # Dump R based registers
-        for reg in xrange(UC_ARM_REG_R0, UC_ARM_REG_R0 + 14):
-            print_string = "[*] R{:<3d} = 0x{:08x}".format((reg-UC_ARM_REG_R0), self.emu.reg_read(reg))
-            print print_string
-
-        print ""
-
-
     # -- Methods to add and remove hooks
 
     def hook_add(self, *a, **kw):
@@ -260,9 +231,30 @@ class ArmCPU(object):
         except UcError as e:
             print "ERROR: %s", e
 
-        self.stop()
         return True
 
+
+    def _dump_regs(self):
+        """dump_regs method
+
+        Dump state of ARM registers to stdout
+        """
+
+        # Dump our special named registers first
+        print "[*] SL = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_SL))
+        print "[*] FP = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_FP))
+        print "[*] IP = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_IP))
+        print "[*] SP = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_SP))
+        print "[*] LR = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_LR))
+        print "[*] PC = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_PC))
+        print "[*] CPSR = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_CPSR))
+
+        print ""
+
+        # Dump R based registers
+        for reg in xrange(UC_ARM_REG_R0, UC_ARM_REG_R0 + 14):
+            print_string = "[*] R{:<3d} = 0x{:08x}".format((reg-UC_ARM_REG_R0), self.emu.reg_read(reg))
+            print print_string
 
 class ArmjitsuCmd(Cmd):
     """
