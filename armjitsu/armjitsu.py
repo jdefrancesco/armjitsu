@@ -54,14 +54,19 @@ class ArmCPU(object):
 
     def __init__(self, address, code):
 
+        # Store code
         self.code = code
-
         # Where our code execution will begin
         self.pc = address
+        # Where execution ends...
+        self.end_addr = self.pc + len(self.code)
 
         self.break_points = {}
         self.sys_calls = []
 
+        self.strop_now = False
+        self.is_running = False
+        self.registers = {}
 
         # Jump tracking state
         self._prev = None
@@ -78,10 +83,35 @@ class ArmCPU(object):
 
             self.emu.reg_write(UC_ARM_REG_APSR, 0x000000) #All application flags turned on
 
-            self.hook_add(UC_HOOK_CODE, self.trace_hook, self.break_points)
+            self.emu.hook_add(UC_HOOK_CODE, self.trace_hook)
+            self.emu.hook_add(UC_HOOK_BLOCK, self.hook_block)
+            self.emu.hook_add(UC_HOOK_INTR, self.hook_interrupt)
+            self.emu.hook_add(UC_HOOK_MEM_WRITE, self.hook_mem_access)
+            self.emu.hook_add(UC_HOOK_MEM_READ, self.hook_mem_access)
 
         except UcError as e:
             print "ERROR: %s", e
+
+
+    def cmd_run(self):
+        try:
+            self.emu.emu_start(self.start_addr, self.end_addr)
+        except UcError as e:
+            self.emu.emu_stop()
+            return
+
+        if self.get_pc() == self.end_addr:
+            print "Ending execution..."
+        return
+
+    def cmd_stop(self):
+
+        del self.emu
+        self.emu = None
+        self.is_running = False
+
+    def cmd_dumpregs(self):
+        print self._dump_regs()
 
     def cmd_set_bp(self, address=None):
         """set_bp
@@ -101,49 +131,12 @@ class ArmCPU(object):
     def cmd_get_regs(self):
         pass
 
-    def cmd_start(self):
-        pass
 
-    def emu_start(self, *args, **kwargs):
-        """emu_start() will start the emulator and have it execute supplied machine code.
+    def get_pc(self):
+        return self.emu.reg_read(UC_ARM_REG_PC)
 
-        This method first determines if the emulator is already running, if so it continues to run.
-        If emulator has not been started yet, this method will kick it off.
-
-        Args:
-            args (list): list of needed parameters to pass to emu_start() method as first argument.
-            kwargs (dict): dictionary parameter passed to emu_start() as second argument.
-
-        Side effects:
-            1. Sets self.running = True, if we started emulator.
-            2. Starts emulator is it is not already in action.
-        """
-
-        try:
-            return self.emu.emu_start(*args, **kwargs)
-        except UcError as e:
-            print "[-] Error: %s" % e
-
-
-    def emu_stop(self, *args, **kwargs):
-        """emu_stop() will stop the emulator.
-
-        This method first determines if the emulator is already running, if execution is halted.
-        If emulator is not running the emulator remains in stopped state.
-
-        Args:
-            args (list): list of needed parameters to pass to emu_stop() method as first argument.
-            kwargs (dict): dictionary parameter passed to emu_stop() as second argument.
-
-        Side effects:
-            1. Sets self.running = False, if we stopped the emulator.
-            2. Stops emulator if it was currently running.
-        """
-        try:
-            return self.emu.emu_stop(*args, **kwargs)
-        except UcError as e:
-            print "[-] Error: %s" % e
-
+    def get_sp(self):
+        return self.emu.reg_read(UC_ARM_REG_SP)
 
     def update_pc(self, pc=None):
         """"update_pc() updates PC register with a value supplied as an argument.
@@ -182,39 +175,29 @@ class ArmCPU(object):
         self._dump_regs()
 
 
-    def single_step(self, pc=None):
-        self._singlestep = (None, None)
+#     def single_step(self, pc=None):
+#         self._singlestep = (None, None)
 
-        pc = pc or self.pc
+#         pc = pc or self.pc
 
-        try:
-            self.emu.hook_add(UC_HOOK_CODE, self.single_step_hook_code)
-        except UcError as e:
-            self._singlestep = (None, None)
+#         try:
+#             self.emu.hook_add(UC_HOOK_CODE, self.single_step_hook_code)
+#         except UcError as e:
+#             self._singlestep = (None, None)
 
-        return self._singlestep
-
-
-    def single_step_iter(self, pc=None):
-        s = self.single_step(pc)
-        while s:
-            yield s
-            s = self.single_step(pc)
+#         return self._singlestep
 
 
-    def single_step_hook_code(self, uc, address, size, user_data):
-        print "Single stepping: 0x{:08}".format(address)
-        self._singlestep = (address, size)
+#     def single_step_iter(self, pc=None):
+#         s = self.single_step(pc)
+#         while s:
+#             yield s
+#             s = self.single_step(pc)
 
-    # -- Methods to add and remove hooks
 
-    def hook_add(self, *a, **kw):
-        return self.emu.hook_add(*a, **kw)
-
-    def hook_del(self, *a, **kw):
-        return self.emu.hook_del(*a, **kw)
-
-    # -- End add/del hooks
+#     def single_step_hook_code(self, uc, address, size, user_data):
+#         print "Single stepping: 0x{:08}".format(address)
+#         self._singlestep = (address, size)
 
 
     def trace_hook(self, uc, address, size, user_data):
@@ -256,6 +239,8 @@ class ArmCPU(object):
             print_string = "[*] R{:<3d} = 0x{:08x}".format((reg-UC_ARM_REG_R0), self.emu.reg_read(reg))
             print print_string
 
+
+
 class ArmjitsuCmd(Cmd):
     """
     Command loop when ran without args
@@ -278,13 +263,23 @@ class ArmjitsuCmd(Cmd):
 
     def do_exit(self, line):
         print "Exiting..."
+        Armjitsu.arm_dbg.cmd_stop()
         return True
 
     def do_run(self, line):
-        ArmjitsuCmd.arm_dbg.start()
+        if not ArmjitsuCmd.arm_dbg.is_running:
+            ArmjitsuCmd.arm_dbg.is_running = True
+
+        ArmjitsuCmd.arm_dbg.cmd_run()
 
     def do_stop(self, line):
-        pass
+        if not ArmjitsuCmd.arm_dbg.is_running:
+            return
+        ArmjitsuCmd.arm_dbg.cmd_stop()
+
+
+    def do_dumpregs(self, line):
+        ArmjitsuCmd.arm_dbg.cmd_dumpregs()
 
     def do_continue(self, line):
         pass
