@@ -73,24 +73,25 @@ class ArmCPU(object):
         self._prevsize = None
         self._curr = None
 
+        self.context = None
+
         try:
 
             # Init our ARM emulator with code at given address
             self.emu = Uc(UC_ARCH_ARM, UC_MODE_ARM)
-            self.emu.mem_map(self.address, 2 * 1024 * 1024)
-            self.emu.mem_write(self.address, self.code)
+            self.emu.mem_map(self.pc, 2 * 1024 * 1024)
+            self.emu.mem_write(self.pc, self.code)
 
             self.emu.reg_write(UC_ARM_REG_APSR, 0x000000) #All application flags turned on
 
+            self.hook_add(UC_HOOK_CODE, self.trace_hook, self.break_points)
+            self.emu_start(self.pc, self.pc + len(self.code), count=0)
         except UcError as e:
             print "ERROR: %s", e
 
-        # Set up hooks
-        self.hook_add(UC_HOOK_CODE, hook_code_trace, user_data=self.break_points)
 
-
-    def start(self, *args, **kwargs):
-        """start() will start the emulator and have it execute supplied machine code.
+    def emu_start(self, *args, **kwargs):
+        """emu_start() will start the emulator and have it execute supplied machine code.
 
         This method first determines if the emulator is already running, if so it continues to run.
         If emulator has not been started yet, this method will kick it off.
@@ -104,16 +105,14 @@ class ArmCPU(object):
             2. Starts emulator is it is not already in action.
         """
 
-        if not self.running:
-            self.running = True
-            try:
-                return self.emu.emu_start(*args, **kwargs)
-            except UcError as e:
-                print "[-] Error: %s" % e
+        try:
+            return self.emu.emu_start(*args, **kwargs)
+        except UcError as e:
+            print "[-] Error: %s" % e
 
 
-    def stop(self, *args, **kwargs):
-        """stop() will stop the emulator.
+    def emu_stop(self, *args, **kwargs):
+        """emu_stop() will stop the emulator.
 
         This method first determines if the emulator is already running, if execution is halted.
         If emulator is not running the emulator remains in stopped state.
@@ -126,13 +125,10 @@ class ArmCPU(object):
             1. Sets self.running = False, if we stopped the emulator.
             2. Stops emulator if it was currently running.
         """
-
-        if self.running:
-            self.running = False
-            try:
-                return self.emu.emu_stop(*args, **kwargs)
-            except UcError as e:
-                print "[-] Error: %s" % e
+        try:
+            return self.emu.emu_stop(*args, **kwargs)
+        except UcError as e:
+            print "[-] Error: %s" % e
 
 
     def update_pc(self, pc=None):
@@ -194,6 +190,7 @@ class ArmCPU(object):
 
 
     def single_step_hook_code(self, uc, address, size, user_data):
+        print "Single stepping: 0x{:08}".format(address)
         self._singlestep = (address, size)
 
 
@@ -212,16 +209,6 @@ class ArmCPU(object):
             self.id += 1
             print "Setting breakpoint {} = {}".format(self.id, address)
 
-    # -- Methods to add and remove hooks
-
-    def hook_add(self, *a, **kw):
-        return self.emu.hook_add(*a, **kw)
-
-    def hook_del(self, *a, **kw):
-        return self.emu.hook_del(*a, **kw)
-
-
-    # -- Our "private" methods
 
     def _dump_regs(self):
         """dump_regs method
@@ -248,9 +235,38 @@ class ArmCPU(object):
         print ""
 
 
+    # -- Methods to add and remove hooks
+
+    def hook_add(self, *a, **kw):
+        return self.emu.hook_add(*a, **kw)
+
+    def hook_del(self, *a, **kw):
+        return self.emu.hook_del(*a, **kw)
+
+    # -- End add/del hooks
+
+
+    def trace_hook(self, uc, address, size, user_data):
+        try:
+            # Tell user we have hit entry
+
+            # Ask for  - Continue,
+            print "TRACE @ 0x{:08x}".format(address)
+            mem_tmp = uc.mem_read(address, size)
+            print "*** PC = %x *** :" %(address),
+            for i in mem_tmp:
+                print " %02x" %i
+            print("")
+        except UcError as e:
+            print "ERROR: %s", e
+
+        self.stop()
+        return True
+
+
 class ArmjitsuCmd(Cmd):
     """
-    Command loop dispatching, this is how user interacts with out emulator
+    Command loop when ran without args
 
     """
 
@@ -258,8 +274,9 @@ class ArmjitsuCmd(Cmd):
     prompt = "(armjitsu) "
     ruler = "-"
 
+    global ARM_CODE2
     # Our instance of ArmDBG
-    arm_dbg = ArmCPU(address=0x10000, ARM_CODE2)
+    arm_dbg = ArmCPU(0x10000, ARM_CODE2)
 
 
     def do_EOF(self, line):
@@ -292,30 +309,9 @@ class ArmjitsuCmd(Cmd):
 
 
 
-def hook_code_trace(uc, address, size, user_data):
-
-    # Handle breakpoints
-    if address in user_data.values():
-        try:
-            print "BREAK POINT HIT @ 0x{:08x}".format(address)
-            mem_tmp = uc.mem_read(address, size)
-            print "*** PC = %x *** :" %(address),
-            for i in mem_tmp:
-                print " %02x" %i
-            print("")
-        except UcError as e:
-            print "ERROR: %s", e
 
 
-    return True
-
-
-def hook_code_dbg_step(uc, address, size, user_data):
-    pass
-
-def main(args):
-
-    # argument parsing
+if __name__ == "__main__":
 
     print "Welcome to ARMjitsu - The simple ARM emulator!\n"
 
@@ -328,7 +324,7 @@ def main(args):
     parser.add_argument("-m", "--machine", dest="machine_code", help="Provide raw ARM32 machine code to emulator")
     parser.add_argument("-e", "--emutest", help="For developer use. ARMjitsu will emulate machine code embedded in source.")
     parser.add_argument("-v", "--version", action="version", version="")
-    parser.add_arguments("-s", "--snapshot", dest="snapshot_file", help="")
+    parser.add_argument("-s", "--snapshot", dest="snapshot_file", help="")
 
     results = parser.parse_args()
 
@@ -338,6 +334,3 @@ def main(args):
     a.cmdloop()
 
 
-if __name__ == "__main__":
-
-    main(sys.argv)
