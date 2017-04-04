@@ -1,16 +1,20 @@
 #!/usr/bin/env python
 
+__author__ = "Joey DeFrancesco"
+__version__ = "0.1"
+
 import sys
 import argparse
 import string
-
 from cmd2 import Cmd, make_option, options
 
 import armcpu
+from misc_utils import *
 
+
+# Scratch globals for the time being...
 
 ADDRESS = 0x10000
-
 
 ARM_CODE2 = ("\x01\x60\x8f\xe2"
 "\x16\xff\x2f\xe1"
@@ -49,31 +53,29 @@ class ArmjitsuCmd(Cmd):
 
     # --- Implement supported commands
 
-    def do_exit(self, line):
-        print "Exiting..."
-        return True
 
     def do_run(self, line):
+        new_line()
         self.arm_dbg.use_step_mode = False
         self.arm_dbg.stop_now = False
         self.arm_dbg.run()
 
     def do_continue(self, line):
-        self.arm_dbg.contiue_exec()
+        self.arm_dbg.run()
 
-    def do_stop(self, line):
-        pass
 
     def do_regs(self, line):
-        self.arm_dbg.dumpregs()
+        self.arm_dbg.dump_regs()
 
     def do_break(self, line):
         pass
 
     def do_info(self, line):
-        print self.arm_dbg.is_running
-        print hex(self.arm_dbg.saved_pc)
+        pass
 
+    def do_exit(self, line):
+        print "Exiting..."
+        return True
 
 
 if __name__ == "__main__":

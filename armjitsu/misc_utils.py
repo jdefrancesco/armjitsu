@@ -8,4 +8,9 @@
 
 def print_header(header_text):
     """Print header between four equal signs."""
-    print "==== {} ====\n".format(header_text)
+    print "\n==== {} ====".format(header_text)
+
+def new_line(count=1):
+    """Print new line 'count' number of times (count=1 by default)."""
+    out_str = "\n" * count
+    print out_str,

@@ -1,12 +1,16 @@
-#!/usr/bin/env python
+"""armcpu.py moodule
 
-# File: armcpu.py
-# Description: Module that provides ArmCPU class which encapsulates a unicorn instance for more fine grain control.
+Supplies ArmCPU() class which wraps a unicorn emulator object for more fine grain control
+over a possible emulation session.
+"""
+
+__author__ = "Joey DeFrancesco"
 
 from unicorn import *
 from unicorn.arm_const import *
-
 from capstone import *
+
+from misc_utils import *
 
 class ArmCPU(object):
     """ArmCPU class provides abstraction to unicorn emulation object.
@@ -17,23 +21,25 @@ class ArmCPU(object):
 
     Attributes:
         code (str): Human readable string describing the exception.
-        pc (int): Exception error code.
-        break_points(dict):
-        sys_calls(list):
-
+        break_points(dict): dictionary of breakpoints.
+        sys_calls(list): system calls.
+        saved_pc(int): save our PC context when we stop emulator.
+        emu(Uc): Our unicorn emulartion object.
+        start_addr():
+        is_running():
+        end_addr():
+        stop_now():
+        registers():
+        areas():
     """
 
 
     def __init__(self, address, code):
-
-        # Store code
-        # Where execution ends...
-
         self.break_points = {}
         self.sys_calls = []
 
-
         self.saved_pc = None
+
         # Jump tracking state
         self._prev = None
         self._prevsize = None
@@ -44,10 +50,14 @@ class ArmCPU(object):
 
 
     def emu_init(self, address, code):
-        """emu_init()
+        """emu_init() - called by constructor to setup
+        our emulation object.
+
+        Args:
+            address(int):
+            code(byte array):
 
         """
-        self.is_setup = False
         self.code = code
         self.start_addr = address
         self.end_addr = self.start_addr + len(self.code)
@@ -64,9 +74,10 @@ class ArmCPU(object):
             self.emu_init_registers()
         except UcError as e:
             print "[-] Error setting up!"
-            return
+            return False
 
-        print "[+] Emulator initialized..."
+        return True
+
 
     def emu_init_memory(self):
         """emu_init_memory()
@@ -96,13 +107,13 @@ class ArmCPU(object):
 
 
     def run(self):
-        """run()
-
+        """run() - start emulation. Ensure the emulation object is properly initalized before
+        calling this method.
         """
-        print "[+] Beginning execution..."
         try:
+            s_addr = (self.saved_pc if self.saved_pc else self.start_addr)
             self.is_running = True
-            self.emu.emu_start(self.start_addr, self.end_addr)
+            self.emu.emu_start(s_addr, self.end_addr)
         except UcError as e:
             self.emu.emu_stop()
             return
@@ -113,26 +124,17 @@ class ArmCPU(object):
 
 
     def pause(self):
-        """pause()
-
-        """
+        """pause() - save emulator state and cease execution."""
         if self.is_running:
+            self.saved_pc = self.get_pc()
             self.emu.emu_stop()
             self.is_running = False
 
 
-    def continue_exec(self):
-        """continue_exec()
-
-        """
-        if not self.is_running:
-            self.is_running = True
-            self.emu.emu_start(self.saved_pc, self.end_addr)
-
-
     def stop(self):
-        """stop()
-
+        """stop() - stops emulation, unmaps any memory, and destroys emulation object.
+        This method could be thought of as a deconstructor usually called before exiting
+        armjitsu.
         """
         self.emu.mem_unmap(self.start_addr)
         self.emu.emu_stop()
@@ -142,28 +144,38 @@ class ArmCPU(object):
 
 
     def dump_regs(self):
-        """dump_regs()
+        """dump_regs() - shows user the content of ARM registers."""
+        print_header("Register Dump")
 
-        """
-        print self._dump_regs()
+        # Dump registers R0 to R9
+        for reg in xrange(UC_ARM_REG_R0, UC_ARM_REG_R0 + 10):
+            print_string = "[*] R{:<3d} = 0x{:08x}".format((reg-UC_ARM_REG_R0), self.emu.reg_read(reg))
+            print print_string
 
+        print ""
+
+        # Dump registers with alias
+        print "[*] SL   = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_SL))
+        print "[*] FP   = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_FP))
+        print "[*] IP   = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_IP))
+        print "[*] SP   = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_SP))
+        print "[*] LR   = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_LR))
+        print "[*] PC   = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_PC))
+        print "[*] CPSR = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_CPSR))
+        print ""
 
     def get_pc(self):
-        """get_pc()
-
-        """
+        """get_pc() - returns Program Counter register (PC)."""
         return self.emu.reg_read(UC_ARM_REG_PC)
 
 
     def get_sp(self):
-        """get_sp()
-
-        """
+        """get_sp() - returns Stack Pointer register (SP)."""
         return self.emu.reg_read(UC_ARM_REG_SP)
 
 
     def dump_state(self):
-        """dump_state() dumps state of emulation machine.
+        """dump_state() - dumps state of emulation machine.
 
         This method should dump the context of the emulator. Register values, backtrace, and current instructions executed
         should all be printed to screen output.
@@ -177,57 +189,29 @@ class ArmCPU(object):
             ... REG VALUES, BACKTRACE, INSTRUCTIONS
 
         """
-        self._dump_regs()
+        pass
 
 
     def main_code_hook(self, uc, address, size, user_data):
         """ main_code_hook()
 
         """
+        # Output our emulated code as it is executed.
         try:
-            # Ask for  - Continue,
-            print "TRACE @ 0x{:08x}".format(address)
+
             mem_tmp = uc.mem_read(address, size)
-            print "*** PC = %x *** :" %(address),
-            for i in mem_tmp:
-                print " %02x" %i
-            print("")
+            inst = ["0x{:02x}".format(i) for i in mem_tmp]
+            inst_string = "  ".join(inst)
+
+            out_string = "0x{:08x}: {}".format(address, inst_string)
+            print out_string
+
         except UcError as e:
             print "ERROR: %s", e
 
-        usr_input = raw_input("Pause? ")
-        if usr_input == "y":
-            print "[+] Pausing..."
-            self.pause()
-            print "RETURNED FROM PAUSE"
-            self.dumpregs()
-            self.saved_pc = uc.reg_read(UC_ARM_REG_PC)
-            return True
-        else:
-            return True
 
-    # -- Private methods
+        # Check for breakpoints
 
-    def _dump_regs(self):
-        """dump_regs method
-
-        Dump state of ARM registers to stdout
-        """
-
-        # Dump our special named registers first
-        print "[*] SL = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_SL))
-        print "[*] FP = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_FP))
-        print "[*] IP = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_IP))
-        print "[*] SP = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_SP))
-        print "[*] LR = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_LR))
-        print "[*] PC = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_PC))
-        print "[*] CPSR = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_CPSR))
-
-        print ""
-
-        # Dump R based registers
-        for reg in xrange(UC_ARM_REG_R0, UC_ARM_REG_R0 + 14):
-            print_string = "[*] R{:<3d} = 0x{:08x}".format((reg-UC_ARM_REG_R0), self.emu.reg_read(reg))
-            print print_string
+        # Ask for user command for (stopping/stepping/etc)
 
 
