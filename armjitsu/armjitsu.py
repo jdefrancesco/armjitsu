@@ -41,10 +41,6 @@ class ArmjitsuCmd(Cmd):
     prompt = "(armjitsu) "
     ruler = "-"
 
-    global ARM_CODE2
-    # Our instance of ArmDBG
-
-
     def do_EOF(self, line):
         return True
 
@@ -63,7 +59,7 @@ class ArmjitsuCmd(Cmd):
         self.arm_dbg.run()
 
     def do_continue(self, line):
-        self.arm_dbg.resume()
+        self.arm_dbg.contiue_exec()
 
     def do_stop(self, line):
         pass

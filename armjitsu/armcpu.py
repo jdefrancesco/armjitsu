@@ -1,3 +1,7 @@
+#!/usr/bin/env python
+
+# File: armcpu.py
+# Description: Module that provides ArmCPU class which encapsulates a unicorn instance for more fine grain control.
 
 from unicorn import *
 from unicorn.arm_const import *
@@ -40,7 +44,9 @@ class ArmCPU(object):
 
 
     def emu_init(self, address, code):
+        """emu_init()
 
+        """
         self.is_setup = False
         self.code = code
         self.start_addr = address
@@ -63,26 +69,36 @@ class ArmCPU(object):
         print "[+] Emulator initialized..."
 
     def emu_init_memory(self):
+        """emu_init_memory()
 
+        """
 
         # Map memory sections
         self.emu.mem_map(self.start_addr, 2 * 1024 * 1024)
         self.emu.mem_write(self.start_addr, self.code)
 
         # Add our hooks..
-        self.emu.hook_add(UC_HOOK_CODE, self.trace_hook)
+        self.emu.hook_add(UC_HOOK_CODE, self.main_code_hook)
 
 
     def emu_init_registers(self):
+        """emu_init_registers()
 
+        """
         self.emu.reg_write(UC_ARM_REG_APSR, 0x000000) #All application flags turned on
 
 
     def emu_map_code(self):
+        """emu_map_code()
+
+        """
         pass
 
 
     def run(self):
+        """run()
+
+        """
         print "[+] Beginning execution..."
         try:
             self.is_running = True
@@ -97,18 +113,27 @@ class ArmCPU(object):
 
 
     def pause(self):
+        """pause()
+
+        """
         if self.is_running:
             self.emu.emu_stop()
             self.is_running = False
 
 
-    def resume(self):
+    def continue_exec(self):
+        """continue_exec()
+
+        """
         if not self.is_running:
             self.is_running = True
             self.emu.emu_start(self.saved_pc, self.end_addr)
 
-    def stop(self):
 
+    def stop(self):
+        """stop()
+
+        """
         self.emu.mem_unmap(self.start_addr)
         self.emu.emu_stop()
         del self.emu
@@ -116,15 +141,24 @@ class ArmCPU(object):
         self.is_running = False
 
 
-    def dumpregs(self):
+    def dump_regs(self):
+        """dump_regs()
+
+        """
         print self._dump_regs()
 
 
-
     def get_pc(self):
+        """get_pc()
+
+        """
         return self.emu.reg_read(UC_ARM_REG_PC)
 
+
     def get_sp(self):
+        """get_sp()
+
+        """
         return self.emu.reg_read(UC_ARM_REG_SP)
 
 
@@ -146,11 +180,11 @@ class ArmCPU(object):
         self._dump_regs()
 
 
+    def main_code_hook(self, uc, address, size, user_data):
+        """ main_code_hook()
 
-    def trace_hook(self, uc, address, size, user_data):
+        """
         try:
-            # Tell user we have hit entry
-
             # Ask for  - Continue,
             print "TRACE @ 0x{:08x}".format(address)
             mem_tmp = uc.mem_read(address, size)
@@ -172,6 +206,7 @@ class ArmCPU(object):
         else:
             return True
 
+    # -- Private methods
 
     def _dump_regs(self):
         """dump_regs method
