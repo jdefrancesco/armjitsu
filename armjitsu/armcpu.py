@@ -12,6 +12,15 @@ from capstone import *
 
 from misc_utils import *
 
+class AddressOutOfRange(Exception):
+
+    def __init__(self, message, errors):
+        super(AddressOutOfRange, self).__init__(message)
+
+        self.message = message
+        self.errors = errors
+
+
 class ArmCPU(object):
     """ArmCPU class provides abstraction to unicorn emulation object.
 
@@ -24,6 +33,8 @@ class ArmCPU(object):
     def __init__(self, address, code):
         self.break_points = {}
         self.sys_calls = []
+
+        self.unique_bp_id = 0
 
         self.emu = None
         self.was_thumb = False
@@ -41,6 +52,7 @@ class ArmCPU(object):
             code(byte array):
 
         """
+
         self.code = code
         self.start_addr = address
         self.end_addr = self.start_addr + len(self.code)
@@ -51,6 +63,7 @@ class ArmCPU(object):
 
         self.registers = {}
         self.areas = {}
+
 
         try:
             self.emu = Uc(UC_ARCH_ARM, UC_MODE_ARM)
@@ -74,7 +87,7 @@ class ArmCPU(object):
 
 
     def emu_init_registers(self):
-        """emu_init_registers()"""
+        """emu_init_registers() set registers to initial values"""
         self.emu.reg_write(UC_ARM_REG_APSR, 0x000000) #All application flags turned on
 
 
@@ -118,8 +131,8 @@ class ArmCPU(object):
 
         # Dump registers R0 to R9
         for reg in xrange(UC_ARM_REG_R0, UC_ARM_REG_R0 + 10):
-            print_string = "[*] R{:<3d} = 0x{:08x}".format((reg-UC_ARM_REG_R0), self.emu.reg_read(reg))
-            print print_string
+            reg_string = "[*] R{:<3d} = 0x{:08x}".format((reg-UC_ARM_REG_R0), self.emu.reg_read(reg))
+            print reg_string
 
         print ""
 
@@ -157,12 +170,20 @@ class ArmCPU(object):
         pass
 
 
-    def set_breakpoint_address(self):
-        pass
+    def set_breakpoint_address(self, break_addr):
+        if  not (self.start_addr <= break_addr <= self.end_addr):
+            raise AddressOutOfRange("Address is out of current range!")
+        else:
+            if break_addr not in self.break_points.values():
+                bp_id = self._next_bp_id()
+                self.break_points[bp_id] = break_addr
 
 
     def list_breakpoints(self):
-        pass
+        print "Break points:"
+        if self.break_points:
+            for bp_id, break_addr in self.break_points:
+                print "{}: 0x{:08x}".format(bp_id, break_addr)
 
 
     def remove_breakpoint(self):
@@ -172,6 +193,7 @@ class ArmCPU(object):
     def main_code_hook(self, uc, address, size, user_data):
         """ main_code_hook()"""
 
+        # Read the current instruction to execute
         try:
             mem_tmp = self.emu.mem_read(address, size)
             inst = ["0x{:02x}".format(i) for i in mem_tmp]
@@ -181,6 +203,7 @@ class ArmCPU(object):
 
         except UcError as e:
             print "ERROR: %s", e
+
 
         if self.stop_now:
              self.start_addr = self.get_pc()
@@ -192,15 +215,16 @@ class ArmCPU(object):
 
         print out_string
 
+        # If we are stepping, we set stop_now, so next hook call we pause emulator
         if self.use_step_mode:
              self.stop_now = True
 
+
+        # Check for break points
         return
 
 
-
-        # Check for breakpoints
-
-        # Ask for user command for (stopping/stepping/etc)
-
+    def _next_bp_id(self):
+        self.unique_bp_id += 1
+        return self.unique_bp_id
 
