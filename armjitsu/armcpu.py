@@ -18,19 +18,6 @@ class ArmCPU(object):
     Args:
         address (int): Base address code will be loaded into and subsequently executed from.
         code (byte array): Actual code to run in emulator.
-
-    Attributes:
-        code (str): Human readable string describing the exception.
-        break_points(dict): dictionary of breakpoints.
-        sys_calls(list): system calls.
-        saved_pc(int): save our PC context when we stop emulator.
-        emu(Uc): Our unicorn emulartion object.
-        start_addr():
-        is_running():
-        end_addr():
-        stop_now():
-        registers():
-        areas():
     """
 
 
@@ -38,14 +25,10 @@ class ArmCPU(object):
         self.break_points = {}
         self.sys_calls = []
 
-        self.saved_pc = None
-
-        # Jump tracking state
-        self._prev = None
-        self._prevsize = None
-        self._curr = None
         self.emu = None
+        self.was_thumb = False
 
+        self.saved_start = address
         self.emu_init(address, code)
 
 
@@ -63,6 +46,7 @@ class ArmCPU(object):
         self.end_addr = self.start_addr + len(self.code)
 
         self.is_running = False
+        self.use_step_mode = False
         self.stop_now = False
 
         self.registers = {}
@@ -80,10 +64,7 @@ class ArmCPU(object):
 
 
     def emu_init_memory(self):
-        """emu_init_memory()
-
-        """
-
+        """emu_init_memory()"""
         # Map memory sections
         self.emu.mem_map(self.start_addr, 2 * 1024 * 1024)
         self.emu.mem_write(self.start_addr, self.code)
@@ -93,16 +74,12 @@ class ArmCPU(object):
 
 
     def emu_init_registers(self):
-        """emu_init_registers()
-
-        """
+        """emu_init_registers()"""
         self.emu.reg_write(UC_ARM_REG_APSR, 0x000000) #All application flags turned on
 
 
     def emu_map_code(self):
-        """emu_map_code()
-
-        """
+        """emu_map_code()"""
         pass
 
 
@@ -111,9 +88,9 @@ class ArmCPU(object):
         calling this method.
         """
         try:
-            s_addr = (self.saved_pc if self.saved_pc else self.start_addr)
             self.is_running = True
-            self.emu.emu_start(s_addr, self.end_addr)
+            if self.was_thumb: self.start_addr |= 1
+            self.emu.emu_start(self.start_addr, self.end_addr)
         except UcError as e:
             self.emu.emu_stop()
             return
@@ -121,14 +98,6 @@ class ArmCPU(object):
         if self.get_pc() == self.end_addr:
             print "[+] Ending execution..."
         return
-
-
-    def pause(self):
-        """pause() - save emulator state and cease execution."""
-        if self.is_running:
-            self.saved_pc = self.get_pc()
-            self.emu.emu_stop()
-            self.is_running = False
 
 
     def stop(self):
@@ -178,11 +147,7 @@ class ArmCPU(object):
         """dump_state() - dumps state of emulation machine.
 
         This method should dump the context of the emulator. Register values, backtrace, and current instructions executed
-        should all be printed to screen output.
-
-
-        Side Effects:
-            Dumps emulator context to screen.
+        should all be printed to stdout.
 
         Example:
             >>> inst.dump_state()
@@ -192,22 +157,46 @@ class ArmCPU(object):
         pass
 
 
+    def set_breakpoint_address(self):
+        pass
+
+
+    def list_breakpoints(self):
+        pass
+
+
+    def remove_breakpoint(self):
+        pass
+
+
     def main_code_hook(self, uc, address, size, user_data):
-        """ main_code_hook()
+        """ main_code_hook()"""
 
-        """
-        # Output our emulated code as it is executed.
         try:
-
-            mem_tmp = uc.mem_read(address, size)
+            mem_tmp = self.emu.mem_read(address, size)
             inst = ["0x{:02x}".format(i) for i in mem_tmp]
             inst_string = "  ".join(inst)
 
-            out_string = "0x{:08x}: {}".format(address, inst_string)
-            print out_string
+            out_string = "0x{:08x}: {}\n".format(address, inst_string)
 
         except UcError as e:
             print "ERROR: %s", e
+
+        if self.stop_now:
+             self.start_addr = self.get_pc()
+             # When we pause execution with a thumb inst, we need to resume it in that mode
+             if size == 2: self.was_thumb = True
+             if size == 4: self.was_thumb = False
+             uc.emu_stop()
+             return
+
+        print out_string
+
+        if self.use_step_mode:
+             self.stop_now = True
+
+        return
+
 
 
         # Check for breakpoints

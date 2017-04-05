@@ -36,10 +36,7 @@ ARM_CODE2 = ("\x01\x60\x8f\xe2"
 
 
 class ArmjitsuCmd(Cmd):
-    """
-    Command loop when ran without args
-
-    """
+    """Command dispatch loop"""
 
     # cmd2 properties
     prompt = "(armjitsu) "
@@ -63,9 +60,14 @@ class ArmjitsuCmd(Cmd):
     def do_continue(self, line):
         self.arm_dbg.run()
 
-
     def do_regs(self, line):
         self.arm_dbg.dump_regs()
+
+    def do_step(self, line):
+        self.arm_dbg.use_step_mode = True
+        self.arm_dbg.stop_now = False
+        self.arm_dbg.run()
+
 
     def do_break(self, line):
         pass
@@ -83,7 +85,6 @@ if __name__ == "__main__":
     print "Welcome to ARMjitsu - The simple ARM emulator!\n"
 
     parser = argparse.ArgumentParser(description="ARMulator - ARM 32-bit emulator for instropection into arcane binaries")
-
     parser.add_argument("-t", "--tui", action="store_true", dest="tui_switch",
                         default=False, help="Launch ARMjitsu with ncurses Textual User Interface")
     parser.add_argument("-l", "--load", type=str, dest="",
@@ -94,7 +95,6 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--snapshot", dest="snapshot_file", help="")
 
     results = parser.parse_args()
-
 
     # Command dispatch loop
     a = ArmjitsuCmd()
