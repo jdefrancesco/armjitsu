@@ -42,21 +42,21 @@ The core armjitsu.py file is in "armjitsu" directory. This directory is structur
 A break down of each file is as follows.
 
 - `__init__.py` - Empty, this is needed for creation of a package
-- `armjitsu.py` - Contains the crux of armjitsu code. This is where  most early development will take place.
+- `armjitsu.py` - Main exec file of armjitsu, it contains dispatch command dispatch loop. 
+- `armcpu.py`   - Contains ArmCPU class. This is the core emulation class, it allows you to create and manipulate a unicorn emulator instance.
 - `misc_utils.py` - Add any helper functions here. For example `print_header()` can be found here.
+
 
 # Conventions:
 
 The code conventions used in armjitsu code are outlined formally in PEP8 document. Please adhere to this document to the best of your ability.
 If there is a specific break from convention, be sure to comment why.
 
+
 ## Documentation:
 
-Documentation of the project is very important. Luckily python makes documentation easy by including ways to document source code directly in the source itself via doc strings. If you are not familiar with docstrings seek on online reference for the basics of setting and viewing a docstring.
-
-ARMjitsu will use google style python doc strings. A reference to how to write docstrings of this style can be found here: http://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html
-
-Keep that reference handy while writing code. Before you bush code to the main central repository be sure documentation is in tact. That is, documentation should follow our agreed upon google style conventions and should be up to date if any changes are made to the code!
+Documentation of the project is very important. Luckily python makes documentation easy by including ways to document source code directly in the source itself via doc strings. 
+If you are not familiar with docstrings seek on online reference for the basics of setting and viewing a docstring.
 
 
 # Git Workflow
