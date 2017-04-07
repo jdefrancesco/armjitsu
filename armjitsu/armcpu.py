@@ -3,14 +3,21 @@
 Supplies ArmCPU() class which wraps a unicorn emulator object for more fine grain control
 over a possible emulation session.
 """
-
+# pylint: skip-file
 __author__ = "Joey DeFrancesco"
+
+import logging
 
 from unicorn import *
 from unicorn.arm_const import *
 from capstone import *
 
+import armjit_const
 from misc_utils import *
+
+# pylint: disable-
+
+logger = logging.getLogger(armjit_const.LOGGER_NAME)
 
 class AddressOutOfRange(Exception):
     """AddressOutOfRange Exception for Addresses not valid in code space"""
@@ -201,7 +208,7 @@ class ArmCPU(object):
         pass
 
 
-    def main_code_hook(self, uc, address, size):
+    def main_code_hook(self, uc, address, size, user_data):
         """Hooks all code. This will be the hook that handles pausing and resuming
         execution if say, a break point is hit or the user is stepping through
         code.

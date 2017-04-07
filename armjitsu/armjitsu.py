@@ -3,17 +3,27 @@
 __author__ = "Joey DeFrancesco"
 __version__ = "0.1"
 
+# pylint: skip-file
+
 import sys
 import argparse
 import string
+import logging
 from cmd2 import Cmd, make_option, options
 
+from clint.textui import puts, indent, colored
+from fabulous import image
+
 import armcpu
+import armjit_const
 from misc_utils import *
 
+# Setup logging
+LOG_FORMAT = "%(asctime)s:line number %(lineno)s:%(levelname)s - %(message)s"
+logging.basicConfig(filename="armjitsu.log", filemode="w", level=logging.INFO, format=LOG_FORMAT)
+logger = logging.getLogger(armjit_const.LOGGER_NAME)
 
 # Scratch globals for the time being...
-
 ADDRESS = 0x10000
 
 ARM_CODE2 = ("\x01\x60\x8f\xe2"
@@ -33,23 +43,32 @@ ARM_CODE2 = ("\x01\x60\x8f\xe2"
 "\x68")
 
 
+def show_banner():
+    """Show the armjitsu banner logo."""
+    print image.Image("../images/armjit-logo.png")
 
 
 class ArmjitsuCmd(Cmd):
     """Command dispatch loop"""
 
     # cmd2 properties
-    prompt = "(armjitsu) "
+    prompt = colored.green("(armjitsu) ")
     ruler = "-"
+
+
+    def __init__(self):
+        Cmd.__init__(self)
+
 
     def do_EOF(self, line):
         return True
 
+    # Will remove when I provide loading file, this is just to test
     def do_init(self, line):
         self.arm_dbg = armcpu.ArmCPU(0x10000, ARM_CODE2)
 
-    # --- Implement supported commands
 
+    # --- Implement supported commands
 
     def do_run(self, line):
         new_line()
@@ -82,7 +101,8 @@ class ArmjitsuCmd(Cmd):
 
 if __name__ == "__main__":
 
-    print "Welcome to ARMjitsu - The simple ARM emulator!\n"
+
+    show_banner()
 
     parser = argparse.ArgumentParser(description="ARMulator - ARM 32-bit emulator for instropection into arcane binaries")
     parser.add_argument("-t", "--tui", action="store_true", dest="tui_switch",
