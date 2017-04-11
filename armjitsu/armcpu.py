@@ -10,10 +10,10 @@ import logging
 
 from unicorn import *
 from unicorn.arm_const import *
-from capstone import *
+import capstone
 
 import armjit_const
-from misc_utils import *
+from ui import *
 
 # pylint: disable-
 
@@ -26,6 +26,10 @@ class AddressOutOfRange(Exception):
         super(AddressOutOfRange, self).__init__(message)
         self.message = message
 
+
+#TODO: For next time I code. Add disassembly of instructions via capstone. Also we may need to store emulation mode
+# so it can be updated every instruction. ARM can switch from big endian to little and vice-versa. Also for proper disassembly
+# we may need to keep close track of working in ARM or THUMB mode. Not sure if unicorn/capstone can handle the dynamic properties ARM can take on
 
 class ArmCPU(object):
     """ArmCPU class provides abstraction to unicorn emulation object.
@@ -40,11 +44,18 @@ class ArmCPU(object):
 
 
     def __init__(self, address, code):
+
+
+        # Breakpoint related variables
         self.break_points = {}
+        self.break_hit = False
+        self.break_addr = False
+
+
+        # Eventually we will implement system calls to emulate usermode
         self.sys_calls = []
 
         self.unique_bp_id = 0
-        self.break_addr = False
 
         # Our emulator object from unicorn
         self.emu = None
@@ -61,8 +72,10 @@ class ArmCPU(object):
         self.use_step_mode = False
         self.stop_now = False
 
+        # Dictionary of registers and memory areas
         self.registers = {}
         self.areas = {}
+
         # Original start address
         self.saved_start = address
 
@@ -110,12 +123,10 @@ class ArmCPU(object):
 
 
     def run(self):
-        """run() - start emulation. Ensure the emulation object is properly initalized before,gv
-        calling this method.
-        """
+        """run() - start emulation.  calling this method."""
         try:
             self.is_running = True
-            if self.was_thumb: self.start_addr |= 1
+            # if self.was_thumb: self.start_addr |= 1
             self.emu.emu_start(self.start_addr, self.end_addr)
         except UcError as err:
             self.emu.emu_stop()
@@ -135,6 +146,16 @@ class ArmCPU(object):
         del self.emu
         self.emu = None
         self.is_running = False
+
+
+
+    def get_arm_register(self, reg):
+        return "UC_ARM_REG_{}".format(reg.upper())
+
+
+
+    def update_register_dict(self):
+        pass
 
 
     def dump_regs(self):
@@ -189,7 +210,7 @@ class ArmCPU(object):
     def set_breakpoint_address(self, break_addr):
         """Set a breakpoint by address."""
         if  not self.start_addr <= break_addr <= self.end_addr:
-            raise AddressOutOfRange("Address is out of current range!")
+            raise AddressOutOfRange("Address is out of .text memory range!")
         else:
             if break_addr not in self.break_points.values():
                 bp_id = self._next_bp_id()
@@ -209,48 +230,91 @@ class ArmCPU(object):
 
 
     def main_code_hook(self, uc, address, size, user_data):
-        """Hooks all code. This will be the hook that handles pausing and resuming
-        execution if say, a break point is hit or the user is stepping through
-        code.
+        """Hooks every instruction. This hook handles pausing and resuming
+        any emulation event that takes place. Stopping, starting, breakpoint handling, etc
         """
 
+        logger.debug("In main_hook_code. address = 0x{:08x}, size = {}".format(address, size))
         # Read the instruction that is about to execute
         try:
-            mem_tmp = self.emu.mem_read(address, size)
-            inst = ["0x{:02x}".format(i) for i in mem_tmp]
-            inst_string = "  ".join(inst)
-
-            out_string = "0x{:08x}: {}\n".format(address, inst_string)
-
+            inst = self.emu.mem_read(address, size)
         except UcError as err:
             print "ERROR: %s", err
 
 
-        # Stop execution if there is a reason to. Eg: break point hit or code stepping
+        logger.debug("stop_now = {}".format(self.stop_now))
+
         if self.stop_now:
+            logger.debug("stop_now: {}".format(self.stop_now))
             self.start_addr = self.get_pc()
             # When we pause execution with a thumb inst, we need to resume it in that mode
-            self.was_thumb = True if size == 2 else False
-
-            if self.break_addr:
-                print "[+] Breakpoint hit! {}".format(self.break_addr)
-
+            # self.was_thumb = True if size == 2 else False
             uc.emu_stop()
             return
 
-        print out_string
+        # print out_string
+        self.disassemble_instruction(inst, address)
 
         # If we are stepping, we set stop_now, so next hook call we pause emulator.
         if self.use_step_mode:
+            logger.debug("hit use_step_mode=True!")
             self.stop_now = True
 
-        # Check for break points.
-        if address in self.break_points.values():
-            self.use_step_mode = True
-            self.break_addr = address
-
+        logger.debug("end of function stop_now = {}".format(self.stop_now))
         return
 
+
+    # -- Instruction disassembly
+
+    def display_disassembly(self):
+        """Display the disassembly of N number of instructions."""
+        pass
+
+    def disassemble_instruction(self, code, addr):
+        """Disassemble one instruction. The instruction contained at a given address."""
+        arch, mode, endian = capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM, capstone.CS_MODE_LITTLE_ENDIAN
+        md = capstone.Cs(arch, mode | endian)
+        for i in md.disasm(bytes(code), addr):
+            print "0x{:08x}:\t{}\t{}".format(i.address, i.mnemonic, i.op_str)
+
+
+    def full_disassembly(self):
+        """Disassemble entire ARM binary."""
+        pass
+
+
+    # -- End disassembly
+
+
+
+
+    # -- Context methods
+
+    def display_context(self):
+        pass
+
+
+    def context_registers(self):
+        pass
+
+
+    def context_code(self):
+        pass
+
+
+    def context_stack(self):
+        pass
+
+
+    def context_backtrace(self):
+        pass
+
+
+    # -- End Context
+
+
+
+    # -- Private methods...
 
     def _next_bp_id(self):
         self.unique_bp_id += 1
