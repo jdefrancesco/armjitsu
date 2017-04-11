@@ -114,7 +114,7 @@ class ArmCPU(object):
 
     def emu_init_registers(self):
         """emu_init_registers() set registers to initial values"""
-        self.emu.reg_write(UC_ARM_REG_APSR, 0x000000) #All application flags turned on
+        self.emu.reg_write(UC_ARM_REG_APSR, 0x00000000) #All application flags turned on
 
 
     def emu_map_code(self):
@@ -237,7 +237,8 @@ class ArmCPU(object):
         logger.debug("In main_hook_code. address = 0x{:08x}, size = {}".format(address, size))
         # Read the instruction that is about to execute
         try:
-            inst = self.emu.mem_read(address, size)
+            code = self.emu.mem_read(address, size)
+            insn = self.disassemble_instruction(code, address)
         except UcError as err:
             print "ERROR: %s", err
 
@@ -253,7 +254,7 @@ class ArmCPU(object):
             return
 
         # print out_string
-        self.disassemble_instruction(inst, address)
+        print "0x{:x}: {:s} {:s}".format(insn.address, insn.mnemonic, insn.op_str)
 
         # If we are stepping, we set stop_now, so next hook call we pause emulator.
         if self.use_step_mode:
@@ -275,8 +276,7 @@ class ArmCPU(object):
         arch, mode, endian = capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM, capstone.CS_MODE_LITTLE_ENDIAN
         md = capstone.Cs(arch, mode | endian)
         for i in md.disasm(bytes(code), addr):
-            print "0x{:08x}:\t{}\t{}".format(i.address, i.mnemonic, i.op_str)
-
+            return i
 
     def full_disassembly(self):
         """Disassemble entire ARM binary."""

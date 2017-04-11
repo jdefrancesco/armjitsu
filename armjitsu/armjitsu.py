@@ -74,7 +74,6 @@ class ArmjitsuCmd(Cmd):
         self.arm_dbg.use_step_mode = False
         self.arm_dbg.stop_now = False
         self.arm_dbg.run()
-        return
 
     def do_continue(self, line):
         self.arm_dbg.run()
@@ -86,7 +85,6 @@ class ArmjitsuCmd(Cmd):
         self.arm_dbg.use_step_mode = True
         self.arm_dbg.stop_now = False
         self.arm_dbg.run()
-        return
 
 
     def do_break(self, line):
