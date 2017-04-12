@@ -19,6 +19,8 @@ from ui import *
 
 logger = logging.getLogger(armjit_const.LOGGER_NAME)
 
+
+
 class AddressOutOfRange(Exception):
     """AddressOutOfRange Exception for Addresses not valid in code space"""
 
@@ -27,9 +29,6 @@ class AddressOutOfRange(Exception):
         self.message = message
 
 
-#TODO: For next time I code. Add disassembly of instructions via capstone. Also we may need to store emulation mode
-# so it can be updated every instruction. ARM can switch from big endian to little and vice-versa. Also for proper disassembly
-# we may need to keep close track of working in ARM or THUMB mode. Not sure if unicorn/capstone can handle the dynamic properties ARM can take on
 
 class ArmCPU(object):
     """ArmCPU class provides abstraction to unicorn emulation object.
@@ -67,6 +66,10 @@ class ArmCPU(object):
         self.start_addr = address
         self.end_addr = self.start_addr + len(self.code)
 
+        # self.start_addr will chance is we pause and resume,
+        # we should keep the original entry address around.
+        self.saved_start = address
+
         # Variables to control stopping and resuming
         self.is_running = False
         self.use_step_mode = False
@@ -77,7 +80,9 @@ class ArmCPU(object):
         self.areas = {}
 
         # Original start address
-        self.saved_start = address
+
+        # Disassembled code listing
+        self.disassembly = {}
 
         self.emu_init()
 
@@ -99,6 +104,7 @@ class ArmCPU(object):
             print "[-] Error setting up!"
             return False
 
+        self._disassemble_code()
         return True
 
 
@@ -108,13 +114,14 @@ class ArmCPU(object):
         self.emu.mem_map(self.start_addr, 2 * 1024 * 1024)
         self.emu.mem_write(self.start_addr, self.code)
 
-        # Add our hooks..
+        # Primary UC_HOOK_CODE hook is invoked for ALL instructions.
+        # This hook is where most of the emulation control happens!
         self.emu.hook_add(UC_HOOK_CODE, self.main_code_hook)
 
 
     def emu_init_registers(self):
         """emu_init_registers() set registers to initial values"""
-        self.emu.reg_write(UC_ARM_REG_APSR, 0x00000000) #All application flags turned on
+        self.emu.reg_write(UC_ARM_REG_APSR, 0xFFFFFFFF)
 
 
     def emu_map_code(self):
@@ -127,7 +134,8 @@ class ArmCPU(object):
         try:
             self.is_running = True
             # if self.was_thumb: self.start_addr |= 1
-            self.emu.emu_start(self.start_addr, self.end_addr)
+            logger.debug("start {}    end {}".format(self.start_addr, self.end_addr))
+            self.emu.emu_start(self.start_addr + 4, self.end_addr)
         except UcError as err:
             self.emu.emu_stop()
             return
@@ -142,6 +150,7 @@ class ArmCPU(object):
         This method could be thought of as a deconstructor usually called before exiting
         armjitsu.
         """
+        print "STOPPING"
         self.emu.emu_stop()
         del self.emu
         self.emu = None
@@ -151,7 +160,6 @@ class ArmCPU(object):
 
     def get_arm_register(self, reg):
         return "UC_ARM_REG_{}".format(reg.upper())
-
 
 
     def update_register_dict(self):
@@ -235,18 +243,15 @@ class ArmCPU(object):
         """
 
         logger.debug("In main_hook_code. address = 0x{:08x}, size = {}".format(address, size))
-        # Read the instruction that is about to execute
         try:
             code = self.emu.mem_read(address, size)
-            insn = self.disassemble_instruction(code, address)
         except UcError as err:
             print "ERROR: %s", err
-
 
         logger.debug("stop_now = {}".format(self.stop_now))
 
         if self.stop_now:
-            logger.debug("stop_now: {}".format(self.stop_now))
+            logger.debug("in condition  stop_now: {}".format(self.stop_now))
             self.start_addr = self.get_pc()
             # When we pause execution with a thumb inst, we need to resume it in that mode
             # self.was_thumb = True if size == 2 else False
@@ -254,9 +259,12 @@ class ArmCPU(object):
             return
 
         # print out_string
-        print "0x{:x}: {:s} {:s}".format(insn.address, insn.mnemonic, insn.op_str)
-
+        logger.debug("Executing instruction at 0x{:x}".format(address))
+        (inst_mnemonic, inst_op_str, inst_size) = self.disassembly[address]
+        print "0x{:08x}: {:s} {:s}".format(address, inst_mnemonic, inst_op_str)
+        print "wtf?"
         # If we are stepping, we set stop_now, so next hook call we pause emulator.
+        logger.debug("line 266 use_step_mode = {}".format(self.use_step_mode))
         if self.use_step_mode:
             logger.debug("hit use_step_mode=True!")
             self.stop_now = True
@@ -271,21 +279,20 @@ class ArmCPU(object):
         """Display the disassembly of N number of instructions."""
         pass
 
-    def disassemble_instruction(self, code, addr):
-        """Disassemble one instruction. The instruction contained at a given address."""
-        arch, mode, endian = capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM, capstone.CS_MODE_LITTLE_ENDIAN
-        md = capstone.Cs(arch, mode | endian)
-        for i in md.disasm(bytes(code), addr):
-            return i
 
     def full_disassembly(self):
         """Disassemble entire ARM binary."""
         pass
 
 
+    def _disassemble_code(self, address=0x10000):
+        """Disassembles ARM machine code provided to our emulator."""
+        code = self.code
+        address = self.saved_start
+        md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
+        self.disassembly = { inst.address: (inst.mnemonic, inst.op_str, inst.size)  for inst in md.disasm(code, self.saved_start) }
+
     # -- End disassembly
-
-
 
 
     # -- Context methods
@@ -312,10 +319,9 @@ class ArmCPU(object):
 
     # -- End Context
 
-
-
-    # -- Private methods...
-
     def _next_bp_id(self):
+        """Returns a unique integer. Allows us to give IDs to breakpoints."""
         self.unique_bp_id += 1
         return self.unique_bp_id
+
+
