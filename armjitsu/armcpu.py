@@ -105,6 +105,7 @@ class ArmCPU(object):
             return False
 
         self._disassemble_code()
+        logger.debug("Finished disassembling code")
         return True
 
 
@@ -121,7 +122,7 @@ class ArmCPU(object):
 
     def emu_init_registers(self):
         """emu_init_registers() set registers to initial values"""
-        self.emu.reg_write(UC_ARM_REG_APSR, 0xFFFFFFFF)
+        self.emu.reg_write(UC_ARM_REG_APSR, 0x00000000)
 
 
     def emu_map_code(self):
@@ -133,9 +134,9 @@ class ArmCPU(object):
         """run() - start emulation.  calling this method."""
         try:
             self.is_running = True
-            # if self.was_thumb: self.start_addr |= 1
+            if self.was_thumb: self.start_addr |= 1
             logger.debug("start {}    end {}".format(self.start_addr, self.end_addr))
-            self.emu.emu_start(self.start_addr + 4, self.end_addr)
+            self.emu.emu_start(self.start_addr, self.end_addr)
         except UcError as err:
             self.emu.emu_stop()
             return
@@ -242,7 +243,7 @@ class ArmCPU(object):
         any emulation event that takes place. Stopping, starting, breakpoint handling, etc
         """
 
-        logger.debug("In main_hook_code. address = 0x{:08x}, size = {}".format(address, size))
+
         try:
             code = self.emu.mem_read(address, size)
         except UcError as err:
@@ -251,25 +252,21 @@ class ArmCPU(object):
         logger.debug("stop_now = {}".format(self.stop_now))
 
         if self.stop_now:
-            logger.debug("in condition  stop_now: {}".format(self.stop_now))
             self.start_addr = self.get_pc()
             # When we pause execution with a thumb inst, we need to resume it in that mode
-            # self.was_thumb = True if size == 2 else False
+            self.was_thumb = True if size == 2 else False
             uc.emu_stop()
             return
 
-        # print out_string
-        logger.debug("Executing instruction at 0x{:x}".format(address))
+
+        logger.debug("address = 0x{:08x}, size = {}".format(address, size))
         (inst_mnemonic, inst_op_str, inst_size) = self.disassembly[address]
         print "0x{:08x}: {:s} {:s}".format(address, inst_mnemonic, inst_op_str)
-        print "wtf?"
+
         # If we are stepping, we set stop_now, so next hook call we pause emulator.
-        logger.debug("line 266 use_step_mode = {}".format(self.use_step_mode))
         if self.use_step_mode:
-            logger.debug("hit use_step_mode=True!")
             self.stop_now = True
 
-        logger.debug("end of function stop_now = {}".format(self.stop_now))
         return
 
 
