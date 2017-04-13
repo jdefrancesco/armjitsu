@@ -11,8 +11,9 @@ import string
 import logging
 from cmd2 import Cmd, make_option, options
 
-from clint.textui import puts, indent, colored
-from fabulous import image
+# Move these modules all to ui.py eventually
+from fabulous import image, utils, text
+from fabulous.color import bold, blue, blue_bg, green
 
 import armcpu
 import armjit_const
@@ -33,7 +34,7 @@ ADDRESS = 0x10000
 # THUMB_CODE2 = ("\x4f\xf0\x00\x01\xbd\xe8\x00\x88\xd1\xe8\x00\xf0\x18\xbf\xad\xbf\xf3\xff\x0b\x0C"
 # "\x86\xf3\x00\x89\x80\xf3\x00\x8c\x4f\xfa\x99\xf6\xd0\xff\xa2\x01")
 # ARM_CODE3 = b"\x37\x00\xa0\xe3\x03\x10\x42\xe0"
-ARM_CODE4   = b"\x37\x00\xa0\xe3\x03\x10\x42\xe0" # mov r0, #0x37; sub r1, r2, r3
+# ARM_CODE4   = b"\x37\x00\xa0\xe3\x03\x10\x42\xe0" # mov r0, #0x37; sub r1, r2, r3
 
 # Pure ARM code
 # ARM_CODE1 = "\xED\xFF\xFF\xEB\x04\xe0\x2d\xe5\x00\x00\x00\x00\xe0\x83\x22\xe5\xf1\x02\x03\x0e\x00\x00\xa0\xe3\x02\x30\xc1\xe7\x00\x00\x53\xe3\x00\x02\x01\xf1\x05\x40\xd0\xe8\xf4\x80\x00\x00"
@@ -48,7 +49,7 @@ ARM_CODE4   = b"\x37\x00\xa0\xe3\x03\x10\x42\xe0" # mov r0, #0x37; sub r1, r2, r
 
 
 
-ARM_CODEZ = ("\x01\x60\x8f\xe2"
+ARM_CODE4 = ("\x01\x60\x8f\xe2"
 "\x16\xff\x2f\xe1"
 "\x40\x40"
 "\x78\x44"
@@ -66,19 +67,17 @@ ARM_CODEZ = ("\x01\x60\x8f\xe2"
 
 
 
-
+# TODO: Move this to ui.py
 def show_banner():
     """Show the armjitsu banner logo."""
-    print image.Image("../images/armjit-logo.png")
+    print image.Image("../images/armjit-logo.png", width=150)
 
 
 class ArmjitsuCmd(Cmd):
     """Command dispatch loop"""
 
-    # cmd2 properties
-    prompt = colored.green("(armjitsu) ")
+    prompt = bold(green("(armjitsu) "))
     ruler = "-"
-
 
     def __init__(self):
         Cmd.__init__(self)
@@ -98,8 +97,8 @@ class ArmjitsuCmd(Cmd):
         self.arm_dbg.run()
 
     def do_continue(self, line):
-        # self.arm_dbg.use_step_mode = False
-        # self.arm_dbg.stop_now = False
+        self.arm_dbg.use_step_mode = False
+        self.arm_dbg.stop_now = False
         self.arm_dbg.run()
 
     def do_regs(self, line):
@@ -107,6 +106,8 @@ class ArmjitsuCmd(Cmd):
         self.arm_dbg.dump_regs()
 
     def do_step(self, line):
+        if self.finished_exec:
+            print ""
         self.arm_dbg.use_step_mode = True
         self.arm_dbg.stop_now = False
         self.arm_dbg.run()

@@ -16,11 +16,6 @@ from clint.textui import colored, puts
 
 BANNER_SEPERATOR = "-"
 
-def print_header(header):
-    """Print header between four equal signs."""
-    print "\n==== {} ====".format(header)
-
-
 def new_line(count=1):
     """Print new line 'count' number of times (count=1 by default)."""
     out_str = "\n" * count
@@ -29,15 +24,15 @@ def new_line(count=1):
 
 # Banner idea taken from pwndbg
 def banner(header):
+    """Prints banner. Red line accross screen with text in the middle."""
 
     header = header.upper()
     try:
-        _height, width = struct.unpack('hh', fcntl.ioctl(sys.stdin.fileno(),
-                                                 termios.TIOCGWINSZ, '1234'))
+        _, width = struct.unpack('hh', fcntl.ioctl(sys.stdin.fileno(), termios.TIOCGWINSZ, '1234'))
     except struct.error:
         width = 80
 
     width -= 2
-    puts( colored.red( ("[{:%s^%ss}]" % (BANNER_SEPERATOR, width)).format(header) ))
+    puts(colored.red(("[{:%s^%ss}]" % (BANNER_SEPERATOR, width)).format(header)))
 
     return

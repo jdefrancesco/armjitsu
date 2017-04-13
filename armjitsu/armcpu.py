@@ -7,6 +7,7 @@ over a possible emulation session.
 __author__ = "Joey DeFrancesco"
 
 import logging
+import binascii
 
 from unicorn import *
 from unicorn.arm_const import *
@@ -59,7 +60,7 @@ class ArmCPU(object):
         # Our emulator object from unicorn
         self.emu = None
 
-        self.was_thumb = False
+        self.thumb_mode = False
 
         # Set code and address variables
         self.code = code
@@ -75,6 +76,7 @@ class ArmCPU(object):
         self.use_step_mode = False
         self.stop_now = False
 
+        self.finished_exec = False
         # Dictionary of registers and memory areas
         self.registers = {}
         self.areas = {}
@@ -134,9 +136,9 @@ class ArmCPU(object):
         """run() - start emulation.  calling this method."""
         try:
             self.is_running = True
-            if self.was_thumb: self.start_addr |= 1
+            if self.thumb_mode: self.start_addr |= 1
             logger.debug("start {}    end {}".format(self.start_addr, self.end_addr))
-            self.emu.emu_start(self.start_addr, self.end_addr)
+            self.emu.emu_start(self.start_addr | 1, self.end_addr)
         except UcError as err:
             self.emu.emu_stop()
             return
@@ -169,19 +171,15 @@ class ArmCPU(object):
 
     def dump_regs(self):
         """dump_regs() - shows user the content of ARM registers."""
-        print_header("Register Dump")
-
         # Dump registers R0 to R9
         for reg in xrange(UC_ARM_REG_R0, UC_ARM_REG_R0 + 10):
 
             reg_string = "[*] R{:<3d} = 0x{:08x}".format((reg-UC_ARM_REG_R0),
                                                          self.emu.reg_read(reg))
-
             print reg_string
 
-        print ""
-
         # Dump registers with alias
+        print ""
         print "[*] SL   = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_SL))
         print "[*] FP   = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_FP))
         print "[*] IP   = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_IP))
@@ -202,20 +200,6 @@ class ArmCPU(object):
         return self.emu.reg_read(UC_ARM_REG_SP)
 
 
-    def dump_state(self):
-        """dump_state() - dumps state of emulation machine.
-
-        This method should dump the context of the emulator. Register values, backtrace,
-        and current instructions executed should all be printed to stdout.
-
-        Example:
-            >>> inst.dump_state()
-            ... REG VALUES, BACKTRACE, INSTRUCTIONS
-
-        """
-        pass
-
-
     def set_breakpoint_address(self, break_addr):
         """Set a breakpoint by address."""
         if  not self.start_addr <= break_addr <= self.end_addr:
@@ -232,6 +216,8 @@ class ArmCPU(object):
         if self.break_points:
             for bp_id, break_addr in self.break_points:
                 print "{}: 0x{:08x}".format(bp_id, break_addr)
+        else:
+            puts(colored.red("No breakpoints currently set."))
 
 
     def remove_breakpoint(self):
@@ -242,19 +228,19 @@ class ArmCPU(object):
         """Hooks every instruction. This hook handles pausing and resuming
         any emulation event that takes place. Stopping, starting, breakpoint handling, etc
         """
-
+        if self.finished_exec:
+            uc.emu_stop()
 
         try:
             code = self.emu.mem_read(address, size)
         except UcError as err:
             print "ERROR: %s", err
 
-        logger.debug("stop_now = {}".format(self.stop_now))
 
         if self.stop_now:
             self.start_addr = self.get_pc()
             # When we pause execution with a thumb inst, we need to resume it in that mode
-            self.was_thumb = True if size == 2 else False
+            self.thumb_mode = True if size == 2 else False
             uc.emu_stop()
             return
 
@@ -266,6 +252,9 @@ class ArmCPU(object):
         # If we are stepping, we set stop_now, so next hook call we pause emulator.
         if self.use_step_mode:
             self.stop_now = True
+
+        if address == self.end_addr:
+            self.finished_exec = True
 
         return
 
@@ -281,13 +270,13 @@ class ArmCPU(object):
         """Disassemble entire ARM binary."""
         pass
 
-
+    # TODO: TESTING DISASSEMBLY as GENERATOR!
     def _disassemble_code(self, address=0x10000):
         """Disassembles ARM machine code provided to our emulator."""
-        code = self.code
-        address = self.saved_start
-        md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
-        self.disassembly = { inst.address: (inst.mnemonic, inst.op_str, inst.size)  for inst in md.disasm(code, self.saved_start) }
+        # code = self.code
+        # address = self.saved_start
+        # md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
+        # self.disassembly = { inst.address: (inst.mnemonic, inst.op_str, inst.size)  for inst in md.disasm(code, self.saved_start) }
 
     # -- End disassembly
 
