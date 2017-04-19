@@ -11,9 +11,10 @@ import string
 import logging
 from cmd2 import Cmd, make_option, options
 
+import colored
+
 # Move these modules all to ui.py eventually
 from fabulous import image, utils, text
-from fabulous.color import bold, blue, blue_bg, green
 
 import armcpu
 import armjit_const
@@ -106,7 +107,7 @@ class ArmjitsuCmd(Cmd):
         self.arm_dbg.dump_regs()
 
     def do_step(self, line):
-        if self.finished_exec:
+        if self.arm_dbg.finished_exec:
             print ""
         self.arm_dbg.use_step_mode = True
         self.arm_dbg.stop_now = False
@@ -124,7 +125,8 @@ class ArmjitsuCmd(Cmd):
 
     def do_exit(self, line):
         print "Exiting..."
-        return True
+        # TODO: Gracefully clean up and destruct ArmCPU Emulation instance
+        sys.exit(0)
 
 
 if __name__ == "__main__":

@@ -81,9 +81,10 @@ class ArmCPU(object):
         self.registers = {}
         self.areas = {}
 
-        # Original start address
 
         # Disassembled code listing
+        self.md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
+
         self.disassembly = {}
 
         self.emu_init()
@@ -144,6 +145,7 @@ class ArmCPU(object):
             return
 
         if self.get_pc() == self.end_addr:
+            self.finished_exec
             print "[+] Ending execution..."
         return
 
@@ -189,7 +191,6 @@ class ArmCPU(object):
         print "[*] CPSR = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_CPSR))
         print ""
 
-
     def get_pc(self):
         """get_pc() - returns Program Counter register (PC)."""
         return self.emu.reg_read(UC_ARM_REG_PC)
@@ -228,6 +229,9 @@ class ArmCPU(object):
         """Hooks every instruction. This hook handles pausing and resuming
         any emulation event that takes place. Stopping, starting, breakpoint handling, etc
         """
+
+        # TOFO:  Shouldn't  get:e
+        here
         if self.finished_exec:
             uc.emu_stop()
 
@@ -253,9 +257,6 @@ class ArmCPU(object):
         if self.use_step_mode:
             self.stop_now = True
 
-        if address == self.end_addr:
-            self.finished_exec = True
-
         return
 
 
@@ -277,6 +278,8 @@ class ArmCPU(object):
         # address = self.saved_start
         # md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
         # self.disassembly = { inst.address: (inst.mnemonic, inst.op_str, inst.size)  for inst in md.disasm(code, self.saved_start) }
+        print "_disassemble_code() stub"
+        pass
 
     # -- End disassembly
 
