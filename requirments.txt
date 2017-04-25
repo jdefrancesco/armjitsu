@@ -1,7 +1,13 @@
 appdirs==1.4.3
+args==0.1.0
 capstone==3.0.4
+clint==0.5.1
 cmd2==0.7.0
+colorful==0.3.6
+fabulous==0.3.0
+olefile==0.44
 packaging==16.8
+Pillow==4.1.0
 pyparsing==2.2.0
 six==1.10.0
 unicorn==1.0.0

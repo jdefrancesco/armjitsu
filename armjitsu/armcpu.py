@@ -107,7 +107,7 @@ class ArmCPU(object):
             print "[-] Error setting up!"
             return False
 
-        self._disassemble_code()
+        self._full_disassembly()
         logger.debug("Finished disassembling code")
         return True
 
@@ -118,8 +118,7 @@ class ArmCPU(object):
         self.emu.mem_map(self.start_addr, 2 * 1024 * 1024)
         self.emu.mem_write(self.start_addr, self.code)
 
-        # Primary UC_HOOK_CODE hook is invoked for ALL instructions.
-        # This hook is where most of the emulation control happens!
+        # Hook all instructions in order to debug emulation session.
         self.emu.hook_add(UC_HOOK_CODE, self.main_code_hook)
 
 
@@ -145,8 +144,9 @@ class ArmCPU(object):
             return
 
         if self.get_pc() == self.end_addr:
-            self.finished_exec
+            self.finished_exec = True
             print "[+] Ending execution..."
+
         return
 
 
@@ -230,8 +230,6 @@ class ArmCPU(object):
         any emulation event that takes place. Stopping, starting, breakpoint handling, etc
         """
 
-        # TOFO:  Shouldn't  get:e
-        here
         if self.finished_exec:
             uc.emu_stop()
 
@@ -262,14 +260,13 @@ class ArmCPU(object):
 
     # -- Instruction disassembly
 
-    def display_disassembly(self):
-        """Display the disassembly of N number of instructions."""
-        pass
+    def _full_disassembly(self):
+        """Disassemble entire ARM binary at once and displays results in list dict self.disassembly."""
+        code = self.code
+        address = self.saved_start
+        md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
+        self.disassembly = { inst.address: (inst.mnemonic, inst.op_str, inst.size)  for inst in md.disasm(code, self.saved_start) }
 
-
-    def full_disassembly(self):
-        """Disassemble entire ARM binary."""
-        pass
 
     # TODO: TESTING DISASSEMBLY as GENERATOR!
     def _disassemble_code(self, address=0x10000):
@@ -278,8 +275,11 @@ class ArmCPU(object):
         # address = self.saved_start
         # md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
         # self.disassembly = { inst.address: (inst.mnemonic, inst.op_str, inst.size)  for inst in md.disasm(code, self.saved_start) }
-        print "_disassemble_code() stub"
-        pass
+        # "_disassemble_code() stub"
+        code = self.code
+        if not address: inst_address = address
+        md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
+
 
     # -- End disassembly
 

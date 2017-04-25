@@ -11,7 +11,7 @@ import string
 import logging
 from cmd2 import Cmd, make_option, options
 
-import colored
+import colorful
 
 # Move these modules all to ui.py eventually
 from fabulous import image, utils, text
@@ -77,7 +77,7 @@ def show_banner():
 class ArmjitsuCmd(Cmd):
     """Command dispatch loop"""
 
-    prompt = bold(green("(armjitsu) "))
+    prompt = "(armjitsu) "
     ruler = "-"
 
     def __init__(self):
