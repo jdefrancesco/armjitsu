@@ -103,14 +103,14 @@ class ArmCPU(object):
             self.emu = Uc(UC_ARCH_ARM, UC_MODE_ARM)
             self.emu_init_memory()
             self.emu_init_registers()
+
+            # TODO: Set emulator flags back to default self.thumb_mode, self.stop_now, etc...
         except UcError as err:
             print "[-] Error setting up!"
             return False
 
         # Hook all instructions in order to debug emulation session.
         self.emu.hook_add(UC_HOOK_CODE, self.main_code_hook)
-        logger.debug("Hooks set")
-
         return True
 
 
@@ -145,8 +145,7 @@ class ArmCPU(object):
 
         if self.get_pc() == self.end_addr:
             self.finished_exec = True
-            logger.debug("finished exec")
-            print "[+] Ending execution..."
+            logger.debug("Finished execution")
 
         return
 
@@ -156,7 +155,6 @@ class ArmCPU(object):
         This method could be thought of as a deconstructor usually called before exiting
         armjitsu.
         """
-        print "STOPPING"
         self.emu.emu_stop()
         del self.emu
         self.emu = None
@@ -174,6 +172,7 @@ class ArmCPU(object):
 
     def dump_regs(self):
         """dump_regs() - shows user the content of ARM registers."""
+
         # Dump registers R0 to R9
         for reg in xrange(UC_ARM_REG_R0, UC_ARM_REG_R0 + 10):
 
@@ -221,6 +220,7 @@ class ArmCPU(object):
         else:
             print "No breakpoints currently set."
 
+
     def remove_breakpoint(self):
         pass
 
@@ -230,21 +230,22 @@ class ArmCPU(object):
         any emulation event that takes place. Stopping, starting, breakpoint handling, etc
         """
 
+        # Check for THUMB Mode is needed for capstone and unicorn engines.
+        # Passing it this information it vital to having correct emulation resuls
+        self.thumb_mode = True if size == 2 else False
+
         code = self.emu.mem_read(address, size)
         insn = self._disassemble_one_instruction(code, address)
 
 
         if self.stop_now:
-            logger.debug("self.stop_now hit!")
             self.start_addr = self.get_pc()
-            # When we pause execution with a thumb inst, we need to resume it in that mode
-            self.thumb_mode = True if size == 2 else False
             uc.emu_stop()
             return
 
-        print "0x{:x}: {:s} {:s}".format(insn.address, insn.mnemonic, insn.op_str)
+        print "0x{:08x}: {:s} {:s}".format(insn.address, insn.mnemonic, insn.op_str)
 
-        # If we are stepping, we set stop_now, so next hook call we pause emulator.
+        # If we are stepping we set stop_now, so next hook call we 'pause' emulator.
         if self.use_step_mode:
             self.stop_now = True
 
@@ -261,17 +262,10 @@ class ArmCPU(object):
         self.disassembly = { inst.address: (inst.mnemonic, inst.op_str, inst.size)  for inst in md.disasm(code, self.saved_start) }
 
 
-    # TODO: TESTING DISASSEMBLY as GENERATOR!
-    # def _disassemble_code(self, all_code, address=0x10000):
-    #     """Disassembles ARM machine code provided to our emulator."""
-    #     code = all_code
-    #     inst_address = address
-    #     md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
-    #     inst = md.disasm(code, inst_address)
-    #     return inst
-
     def _disassemble_one_instruction(self, code, addr):
         md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
+        if self.thumb_mode:
+            md.mode = capstone.CS_MODE_THUMB
         for i in md.disasm(bytes(code), addr):
             return i
 

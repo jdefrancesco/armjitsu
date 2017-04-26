@@ -11,10 +11,16 @@ import termios
 import sys
 import struct
 
-from clint.textui import colored, puts
+from fabulous import image, utils, text
+
+import colorful
 
 
-BANNER_SEPERATOR = "-"
+BANNER_SEPERATOR = '-'
+
+def show_logo():
+    """Show the armjitsu banner logo."""
+    print image.Image("../images/armjit-logo.png", width=130)
 
 def new_line(count=1):
     """Print new line 'count' number of times (count=1 by default)."""
@@ -25,7 +31,7 @@ def new_line(count=1):
 # Banner idea taken from pwndbg
 def banner(header):
     """Prints banner. Red line accross screen with text in the middle."""
-
+    print ""
     header = header.upper()
     try:
         _, width = struct.unpack('hh', fcntl.ioctl(sys.stdin.fileno(), termios.TIOCGWINSZ, '1234'))
@@ -33,6 +39,6 @@ def banner(header):
         width = 80
 
     width -= 2
-    puts(colored.red(("[{:%s^%ss}]" % (BANNER_SEPERATOR, width)).format(header)))
+    print colorful.red(("[{:%s^%ss}]" % (BANNER_SEPERATOR, width)).format(header))
 
     return
