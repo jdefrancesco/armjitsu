@@ -14,12 +14,11 @@ from cmd2 import Cmd, make_option, options
 
 import colorful
 
-# Move these modules all to ui.py eventually
-from fabulous import image, utils, text
-
 import armcpu
 import armjit_const
+
 from ui import *
+from utils import *
 
 # Setup logging
 LOG_FORMAT = "%(asctime)s:line number %(lineno)s:%(levelname)s - %(message)s"
@@ -74,7 +73,9 @@ class ArmjitsuCmd(Cmd):
     # Eventually this will be where we read in code from file
     def __init__(self):
         Cmd.__init__(self)
-        self.arm_dbg = armcpu.ArmCPU(0x10000, ARM_CODE4)
+
+        self.arm_dbg = None
+        self.code = None
 
 
     def do_EOF(self, line):
@@ -83,20 +84,39 @@ class ArmjitsuCmd(Cmd):
 
     # --- Implement supported commands
 
+    def do_file(self, line):
+        if not line:
+            print "Supply a file name please!"
+            return
+
+        file_name = line
+        try:
+            self.code = read_bin_file(file_name)
+        except IOError as e:
+            print "[-] Error reading code from file!"
+
+        self.arm_dbg = armcpu.ArmCPU(self.code)
+        print colorful.bold_green("Loaded binary file: {}".format(file_name))
+
+
     def do_run(self, line):
         banner("Running")
         self.arm_dbg.use_step_mode = False
         self.arm_dbg.stop_now = False
         self.arm_dbg.run()
 
+
     def do_continue(self, line):
         self.arm_dbg.use_step_mode = False
         self.arm_dbg.stop_now = False
         self.arm_dbg.run()
 
+
     def do_regs(self, line):
+        """Display registers."""
         banner("Registers")
         self.arm_dbg.dump_regs()
+
 
     def do_step(self, line):
         self.arm_dbg.use_step_mode = True
@@ -106,6 +126,7 @@ class ArmjitsuCmd(Cmd):
 
     # TODO: RF - check for error conditions
     def do_x(self, line):
+        """Examine memory similar to GDB x/? command"""
         l = line.split()
         byte_count = l[0]
         address = int(l[1], 16)
@@ -134,8 +155,10 @@ class ArmjitsuCmd(Cmd):
         logger.debug("".format(self.arm_dbg.break_points))
         self.arm_dbg.set_breakpoint_address(break_input)
 
+
     def do_blist(self, line):
         print colorful.bold_orange(self.arm_dbg.list_breakpoints())
+
 
     def do_info(self, line):
         pass

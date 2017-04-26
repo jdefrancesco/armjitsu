@@ -43,7 +43,8 @@ class ArmCPU(object):
     # Large class will have quite a few control attributes...
 
 
-    def __init__(self, address, code):
+
+    def __init__(self, code, address=0x10000, bin_type="RAW"):
 
 
         # Breakpoint related variables
@@ -67,8 +68,6 @@ class ArmCPU(object):
         self.start_addr = address
         self.end_addr = self.start_addr + len(self.code)
 
-        # self.start_addr will chance is we pause and resume,
-        # we should keep the original entry address around.
         self.saved_start = address
 
         # Variables to control stopping and resuming
@@ -85,10 +84,11 @@ class ArmCPU(object):
         self.full_disassembly = {}
         self.disassemble_gen = None
 
-        # Set this when we step or hit a breakpoint so we can read corresponding
-        # code.
+        # Set this when we step or hit a breakpoint so we can read corresponding code.
         self.display_asm = False
 
+
+        self.bin_type = bin_type
 
         self.emu_init()
 
@@ -105,10 +105,11 @@ class ArmCPU(object):
         try:
 
             self.emu = Uc(UC_ARCH_ARM, UC_MODE_ARM)
-            self.emu_init_memory()
+            self.emu_init_memory(self.start_addr, self.bin_type)
             self.emu_init_registers()
 
             # TODO: Set emulator flags back to default self.thumb_mode, self.stop_now, etc...
+
         except UcError as err:
             print "[-] Error setting up!"
             return False
@@ -120,11 +121,24 @@ class ArmCPU(object):
         return True
 
 
-    def emu_init_memory(self):
+    def emu_init_memory(self, start_addr, bin_type="RAW"):
         """emu_init_memory()"""
+
         # Map memory sections
-        self.emu.mem_map(self.start_addr, 2 * 1024 * 1024)
-        self.emu.mem_write(self.start_addr, self.code)
+        if bin_type == "RAW":
+
+            # Map ourselves 2MB for emulation starting at 0x10000
+            self.emu.mem_map(self.start_addr, 2 * 1024 * 1024)
+            self.emu.mem_write(self.start_addr, self.code)
+
+            # Set our stack 4KB shy of end of address space
+            self.emu.reg_write(UC_ARM_REG_SP, 0x20F000)
+
+            self.emu.mem_write(self.start_addr, self.code)
+
+        elif bin_type == "ELF":
+            pass
+
 
 
 

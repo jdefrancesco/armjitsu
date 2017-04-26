@@ -1,20 +1,19 @@
-#!/usr/bin/env python
-
-import string
-import struct
-
-import unicorn
-import capstone
+"""utils.py contains utility/helper functions to core armjitsu python code."""
+import os
+import os.path
 
 
-def format_address(addr, mode):
-    memalign_size = mode.get_memory_alignment()
 
-    if memalign_size == 16:
-        return "0x{:04x}".format(addr & 0xFFFF)
-    elif memalign_size == 32:
-        return "0x{:08x}".format(addr & 0xFFFFFFFF)
-    elif memalign_size == 64:
-        return "0x{:16x}".format(addr & 0xFFFFFFFFFFFFFFFF)
+def read_bin_file(target_file):
+    """Read binary contents of file that contains executable code to emulate"""
 
-i
+    if not target_file:
+        return False
+
+    if not os.path.isfile(target_file) and os.access(target_file, os.R_OK):
+        raise IOError("Error obtaining file")
+
+    with open(target_file, "rb") as bin_file:
+        bin_code = bin_file.read()
+
+    return bin_code
