@@ -72,7 +72,7 @@ class ArmCPU(object):
         self.saved_start = address
 
         # Variables to control stopping and resuming
-        self.is_running = False
+        self.is_init = False
         self.use_step_mode = False
         self.stop_now = False
 
@@ -115,6 +115,8 @@ class ArmCPU(object):
 
         # Hook all instructions in order to debug emulation session.
         self.emu.hook_add(UC_HOOK_CODE, self.main_code_hook)
+        self.is_init = True
+
         return True
 
 
@@ -136,10 +138,15 @@ class ArmCPU(object):
         pass
 
 
+    def read_mem(self, address, size):
+        read_address = address
+        read_size = size
+        return self.emu.mem_read(read_address, read_size)
+
+
     def run(self):
         """run() - start emulation.  calling this method."""
         try:
-            self.is_running = True
             if self.thumb_mode: self.start_addr |= 1
 
             self.emu.emu_start(self.start_addr, self.end_addr)
@@ -162,7 +169,7 @@ class ArmCPU(object):
         self.emu.emu_stop()
         del self.emu
         self.emu = None
-        self.is_running = False
+        self.is_init = False
 
 
 
@@ -244,11 +251,13 @@ class ArmCPU(object):
         insn = self._disassemble_one_instruction(code, address)
 
         # Check for breakpoint hit
-        if address in self.break_points.keys():
+        if address in self.break_points.values():
             self.break_hit = True
 
         if self.stop_now:
             self.start_addr = self.get_pc()
+            if self.break_hit:
+                print "Breakpoint hit!"
             uc.emu_stop()
             return
 

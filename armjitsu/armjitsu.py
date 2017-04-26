@@ -9,6 +9,7 @@ import sys
 import argparse
 import string
 import logging
+from binascii import hexlify
 from cmd2 import Cmd, make_option, options
 
 import colorful
@@ -103,13 +104,42 @@ class ArmjitsuCmd(Cmd):
         self.arm_dbg.run()
 
 
+    # TODO: RF - check for error conditions
+    def do_x(self, line):
+        l = line.split()
+        byte_count = l[0]
+        address = int(l[1], 16)
+
+        # Read memory as byte, half-word, word
+        if byte_count == "b":
+            size = 1
+        elif byte_count == "h":
+            size = 2
+        elif byte_count == "w":
+            size = 4
+
+        # Print our data
+        data = self.arm_dbg.read_mem(address, size)
+        data_list = []
+        for i in data:
+            data_list.append("0x{:02x} ".format(i))
+
+
+        print " ".join(data_list)
+
+
+    # TODO: Fix up
     def do_break(self, line):
         break_input = int(line, 16)
-        self.arm_dbg.run()
+        logger.debug("".format(self.arm_dbg.break_points))
         self.arm_dbg.set_breakpoint_address(break_input)
+
+    def do_blist(self, line):
+        print colorful.bold_orange(self.arm_dbg.list_breakpoints())
 
     def do_info(self, line):
         pass
+
 
     def do_exit(self, line):
         print "Exiting..."
