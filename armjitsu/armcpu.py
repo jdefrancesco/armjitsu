@@ -77,14 +77,18 @@ class ArmCPU(object):
         self.stop_now = False
 
         self.finished_exec = False
+
         # Dictionary of registers and memory areas
         self.registers = {}
         self.areas = {}
 
-
-
         self.full_disassembly = {}
         self.disassemble_gen = None
+
+        # Set this when we step or hit a breakpoint so we can read corresponding
+        # code.
+        self.display_asm = False
+
 
         self.emu_init()
 
@@ -228,6 +232,8 @@ class ArmCPU(object):
     def main_code_hook(self, uc, address, size, user_data):
         """Hooks every instruction. This hook handles pausing and resuming
         any emulation event that takes place. Stopping, starting, breakpoint handling, etc
+
+        Detailed description
         """
 
         # Check for THUMB Mode is needed for capstone and unicorn engines.
@@ -237,6 +243,9 @@ class ArmCPU(object):
         code = self.emu.mem_read(address, size)
         insn = self._disassemble_one_instruction(code, address)
 
+        # Check for breakpoint hit
+        if address in self.break_points.keys():
+            self.break_hit = True
 
         if self.stop_now:
             self.start_addr = self.get_pc()
@@ -244,6 +253,10 @@ class ArmCPU(object):
             return
 
         print "0x{:08x}: {:s} {:s}".format(insn.address, insn.mnemonic, insn.op_str)
+
+        if self.break_hit:
+            self.stop_now = True
+
 
         # If we are stepping we set stop_now, so next hook call we 'pause' emulator.
         if self.use_step_mode:

@@ -104,10 +104,9 @@ class ArmjitsuCmd(Cmd):
 
 
     def do_break(self, line):
-        # break_input = int(line, 16)
-        # self.arm_dbg.run()
-        # self.arm_dbg.set_breakpoint_address(break_input)
-        pass
+        break_input = int(line, 16)
+        self.arm_dbg.run()
+        self.arm_dbg.set_breakpoint_address(break_input)
 
     def do_info(self, line):
         pass
