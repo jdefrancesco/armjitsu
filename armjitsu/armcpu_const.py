@@ -1,0 +1,3 @@
+
+RAW_BIN = 0
+ELF_BIN  = 1

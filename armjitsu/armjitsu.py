@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+# WARNING: Because I was informed of dead line so suddenly, the code needs major refactoring.
+# A lot of this code is axcting just as PoC to meet the deadline. It is functional but not well tested.
+# Next revision, with additional funding, I plan to implement the rest of the code-base as I had originally envisioned.
+
 __author__ = "Joey DeFrancesco"
 __version__ = "0.1"
 
@@ -9,7 +13,9 @@ import sys
 import argparse
 import string
 import logging
+import unicorn
 from binascii import hexlify
+
 from cmd2 import Cmd, make_option, options
 
 import colorful
@@ -90,14 +96,18 @@ class ArmjitsuCmd(Cmd):
             return
 
         file_name = line
-        try:
-            self.code = read_bin_file(file_name)
-        except IOError as e:
-            print "[-] Error reading code from file!"
-
-        self.arm_dbg = armcpu.ArmCPU(self.code)
+        self.arm_dbg = armcpu.ArmCPU(file_name)
         print colorful.bold_green("Loaded binary file: {}".format(file_name))
 
+    def do_fileelf(self, line):
+        if not line:
+            print "Supply a file name please!"
+            return
+
+        file_name = line
+        self.arm_dbg = armcpu.ArmCPU(file_name, bin_type="ELF")
+        if self.arm_dbg.is_init:
+            print colorful.bold_green("Loaded ELF binary file: {}".format(file_name))
 
     def do_run(self, line):
         banner("Running")
@@ -155,14 +165,11 @@ class ArmjitsuCmd(Cmd):
         logger.debug("".format(self.arm_dbg.break_points))
         self.arm_dbg.set_breakpoint_address(break_input)
 
-
     def do_blist(self, line):
         print colorful.bold_orange(self.arm_dbg.list_breakpoints())
 
-
     def do_info(self, line):
         pass
-
 
     def do_exit(self, line):
         print "Exiting..."

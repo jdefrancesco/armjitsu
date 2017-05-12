@@ -22,13 +22,13 @@ def show_logo():
     """Show the armjitsu banner logo."""
     print image.Image("../images/armjit-logo.png", width=130)
 
+
 def new_line(count=1):
     """Print new line 'count' number of times (count=1 by default)."""
     out_str = "\n" * count
     print out_str,
 
 
-# Banner idea taken from pwndbg
 def banner(header):
     """Prints banner. Red line accross screen with text in the middle."""
     print ""

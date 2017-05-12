@@ -1,8 +1,12 @@
 """armcpu.py moodule
-
 Supplies ArmCPU() class which wraps a unicorn emulator object for more fine grain control
 over a possible emulation session.
 """
+
+# WARNING: Because I was informed of dead line so suddenly, the code needs major refactoring.
+# A lot of this code is axcting just as PoC to meet the deadline. It is functional but not well tested.
+# Next revision, with additional funding, I plan to implement the rest of the code-base as I had originally envisioned.
+
 # pylint: skip-file
 __author__ = "Joey DeFrancesco"
 
@@ -13,17 +17,17 @@ from unicorn import *
 from unicorn.arm_const import *
 import capstone
 
+import armcpu_const
 import armjit_const
 from ui import *
+from utils import *
 
 # pylint: disable-
 
 logger = logging.getLogger(armjit_const.LOGGER_NAME)
 
-
-
 class AddressOutOfRange(Exception):
-    """AddressOutOfRange Exception for Addresses not valid in code space"""
+    """AddressOutOfRange Exception for Addresses not valid in code space."""
 
     def __init__(self, message):
         super(AddressOutOfRange, self).__init__(message)
@@ -32,63 +36,43 @@ class AddressOutOfRange(Exception):
 
 
 class ArmCPU(object):
-    """ArmCPU class provides abstraction to unicorn emulation object.
-
-    Args:
-        address (int): Base address code will be loaded into and subsequently executed from.
-        code (byte array): Actual code to run in emulator.
-    """
+    """ArmCPU class provides abstraction to unicorn emulation object."""
 
     # pylint: disable=too-many-instance-attributes
     # Large class will have quite a few control attributes...
 
+    def __init__(self, file_name, bin_type=armcpu_const.RAW_BIN):
 
-
-    def __init__(self, code, address=0x10000, bin_type="RAW"):
-
-
-        # Breakpoint related variables
-        self.break_points = {}
-        self.break_hit = False
-        self.break_addr = False
-
-
-        # Eventually we will implement system calls to emulate usermode
-        self.sys_calls = []
-
-        self.unique_bp_id = 0
+        self.file_name = file_name
+        self.bin_type = bin_type
 
         # Our emulator object from unicorn
         self.emu = None
 
-        self.thumb_mode = False
+        self.code = None
+        self.start_addr = 0
+        self.end_addr = 0
+        self.continue_addr = 0
 
-        # Set code and address variables
-        self.code = code
-        self.start_addr = address
-        self.end_addr = self.start_addr + len(self.code)
-
-        self.saved_start = address
-
-        # Variables to control stopping and resuming
         self.is_init = False
         self.use_step_mode = False
-        self.stop_now = False
+        self.stop_next_instruction = False
 
-        self.finished_exec = False
+        # Breakpoint related variables
+        self.break_points = {}
+        self.break_points_enabled = False
+        self.unique_bp_id = 0
 
         # Dictionary of registers and memory areas
         self.registers = {}
-        self.areas = {}
+        self.thumb_mode = False
+
+        self.mem_regions = []
 
         self.full_disassembly = {}
-        self.disassemble_gen = None
+        self.show_asm = False
 
-        # Set this when we step or hit a breakpoint so we can read corresponding code.
-        self.display_asm = False
-
-
-        self.bin_type = bin_type
+        self.is_init = False
 
         self.emu_init()
 
@@ -96,59 +80,100 @@ class ArmCPU(object):
     def emu_init(self):
         """emu_init() - called by constructor to setup
         our emulation object.
-
-        Args:
-            address(int):
-            code(byte array):
-
         """
+
         try:
 
             self.emu = Uc(UC_ARCH_ARM, UC_MODE_ARM)
-            self.emu_init_memory(self.start_addr, self.bin_type)
-            self.emu_init_registers()
-
-            # TODO: Set emulator flags back to default self.thumb_mode, self.stop_now, etc...
-
         except UcError as err:
-            print "[-] Error setting up!"
+            print colorful.bold_red("Error creating emulator: {}".format(err))
+            return False
+
+        try:
+            self.emu_init_memory(self.bin_type)
+        except UcError as err:
+            print colorful.red("Error initializing memory: {}".format(err))
+            return False
+
+        try:
+            self.emu_init_hooks()
+        except UcError as err:
+            print colorful.bold_red("".format(err))
             return False
 
         # Hook all instructions in order to debug emulation session.
-        self.emu.hook_add(UC_HOOK_CODE, self.main_code_hook)
+        # self.emu.hook_add(UC_HOOK_CODE, self.main_code_hook)
+
         self.is_init = True
 
         return True
 
 
-    def emu_init_memory(self, start_addr, bin_type="RAW"):
+    def emu_init_memory(self, bin_type="RAW"):
         """emu_init_memory()"""
 
         # Map memory sections
         if bin_type == "RAW":
 
-            # Map ourselves 2MB for emulation starting at 0x10000
+            self.code = read_bin_file(self.file_name)
+            self.end_addr = self.start_addr + len(self.code)
+
+           # Map ourselves 2MB for emulation starting at 0x10000
             self.emu.mem_map(self.start_addr, 2 * 1024 * 1024)
             self.emu.mem_write(self.start_addr, self.code)
 
             # Set our stack 4KB shy of end of address space
             self.emu.reg_write(UC_ARM_REG_SP, 0x20F000)
 
-            self.emu.mem_write(self.start_addr, self.code)
+            return True
+
 
         elif bin_type == "ELF":
-            pass
 
+            # Get needed ELF data to map into memory (needs total rewrite obviously)
+            self.mem_map = read_elf_bin_file_segments(self.file_name)
+            entry_addr = read_elf_entry(self.file_name)
+            self.code = read_elf_text_section(self.file_name)
+
+
+            is_mapped = False
+            # Read ELF segments but only map PT_LOAD (.text, .bss, .data is all we want for now)
+            for seg_type, vaddr, size, data in self.mem_map:
+                if seg_type != "PT_LOAD":
+                    continue
+
+                print colorful.bold_green("Mapping ELF Segment of type {} at address 0x{:08x} with size {}".format(seg_type, vaddr, size))
+                if not is_mapped:
+                    self.emu.mem_map(vaddr, 4 * 1024 * 1024)
+                    is_mapped = True
+
+                self.emu.mem_write(vaddr, data)
+
+            # SET STACK
+            self.emu.mem_map(0xBEDA4000, 1 * 1024 * 1024)
+
+            self.start_addr = entry_addr
+            self.end_addr = self.start_addr + len(self.code)
+
+            print colorful.bold_white("Entry is 0x{:08x}, size of .text section is 0x{:08x}".format(self.start_addr, len(self.code)))
+
+            self.emu.reg_write(UC_ARM_REG_PC, self.start_addr)
+
+
+            self.emu.reg_write(UC_ARM_REG_SP, 0xBEDA4000)
+            self.emu.reg_write(UC_ARM_REG_CPSR, 0x30)
+
+            return True
+
+
+    def emu_init_hooks(self):
+        """Set emulator hooks."""
+        self.emu.hook_add(UC_HOOK_CODE, self.main_code_hook)
 
 
 
     def emu_init_registers(self):
         """emu_init_registers() set registers to initial values"""
-        self.emu.reg_write(UC_ARM_REG_APSR, 0x00000000)
-
-
-    def emu_map_code(self):
-        """emu_map_code()"""
         pass
 
 
@@ -161,7 +186,9 @@ class ArmCPU(object):
     def run(self):
         """run() - start emulation.  calling this method."""
         try:
-            if self.thumb_mode: self.start_addr |= 1
+            if self.thumb_mode:
+                self.start_addr |= 1
+                print "Starting in THUMB mode..."
 
             self.emu.emu_start(self.start_addr, self.end_addr)
         except UcError as err:
@@ -181,10 +208,11 @@ class ArmCPU(object):
         armjitsu.
         """
         self.emu.emu_stop()
+
         del self.emu
+
         self.emu = None
         self.is_init = False
-
 
 
     def get_arm_register(self, reg):
@@ -200,7 +228,6 @@ class ArmCPU(object):
 
         # Dump registers R0 to R9
         for reg in xrange(UC_ARM_REG_R0, UC_ARM_REG_R0 + 10):
-
             reg_string = "[*] R{:<3d} = 0x{:08x}".format((reg-UC_ARM_REG_R0),
                                                          self.emu.reg_read(reg))
             print reg_string
@@ -259,9 +286,13 @@ class ArmCPU(object):
 
         # Check for THUMB Mode is needed for capstone and unicorn engines.
         # Passing it this information it vital to having correct emulation resuls
-        self.thumb_mode = True if size == 2 else False
+        if size == 2:
+            self.thumb_mode = True
+        else:
+            self.thumb_mode = False
 
         code = self.emu.mem_read(address, size)
+        print "code = {}, type = {}".format(code, type(code))
         insn = self._disassemble_one_instruction(code, address)
 
         # Check for breakpoint hit
@@ -275,7 +306,8 @@ class ArmCPU(object):
             uc.emu_stop()
             return
 
-        print "0x{:08x}: {:s} {:s}".format(insn.address, insn.mnemonic, insn.op_str)
+        if insn:
+            print "0x{:08x}: {:s} {:s}".format(insn.address, insn.mnemonic, insn.op_str)
 
         if self.break_hit:
             self.stop_now = True
@@ -302,6 +334,7 @@ class ArmCPU(object):
         md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
         if self.thumb_mode:
             md.mode = capstone.CS_MODE_THUMB
+        print "{}".format(binascii.hexlify(code))
         for i in md.disasm(bytes(code), addr):
             return i
 
