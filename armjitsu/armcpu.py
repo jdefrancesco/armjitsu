@@ -17,7 +17,7 @@ from unicorn import *
 from unicorn.arm_const import *
 import capstone
 
-import armcpu_const
+# import armjit_const
 import armjit_const
 from ui import *
 from utils import *
@@ -41,7 +41,7 @@ class ArmCPU(object):
     # pylint: disable=too-many-instance-attributes
     # Large class will have quite a few control attributes...
 
-    def __init__(self, file_name, bin_type=armcpu_const.RAW_BIN):
+    def __init__(self, file_name, bin_type=armjit_const.RAW_BIN):
 
         self.file_name = file_name
         self.bin_type = bin_type
