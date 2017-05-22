@@ -42,3 +42,7 @@ def banner(header):
     print colorful.red(("[{:%s^%ss}]" % (BANNER_SEPERATOR, width)).format(header))
 
     return
+
+
+def show_breakpoint_hit_msg(addr):
+    print colorful.red("Breakpoint @ 0x{:08x}".format(addr))

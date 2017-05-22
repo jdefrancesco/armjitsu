@@ -21,6 +21,8 @@ from cmd2 import Cmd, make_option, options
 import colorful
 
 import armcpu
+
+import armcpu_const
 import armjit_const
 
 from ui import *
@@ -49,31 +51,12 @@ ADDRESS = 0x10000
 # ARM_MIXED = "\xd1\xe8\x00\xf0\xf0\x24\x04\x07\x1f\x3c\xf2\xc0\x00\x00\x4f\xf0\x00\x01\x46\x6c"
 
 
-
-ARM_CODE4 = ("\x01\x60\x8f\xe2"
-"\x16\xff\x2f\xe1"
-"\x40\x40"
-"\x78\x44"
-"\x0c\x30"
-"\x49\x40"
-"\x52\x40"
-"\x0b\x27"
-"\x01\xdf"
-"\x01\x27"
-"\x01\xdf"
-"\x2f\x2f"
-"\x62\x69\x6e\x2f"
-"\x2f\x73"
-"\x68")
-
-
-
-
 class ArmjitsuCmd(Cmd):
     """Command dispatch loop"""
 
     prompt = colorful.bold_white("(armjitsu) ")
     ruler = "-"
+    debug = True
 
     def __init__(self):
         Cmd.__init__(self)
@@ -81,10 +64,8 @@ class ArmjitsuCmd(Cmd):
         self.arm_dbg = None
         self.code = None
 
-
     def do_EOF(self, line):
         return True
-
 
     def do_file(self, line):
         if not line:
@@ -92,7 +73,7 @@ class ArmjitsuCmd(Cmd):
             return
 
         file_name = line
-        self.arm_dbg = armcpu.ArmCPU(file_name)
+        self.arm_dbg = armcpu.ArmCPU(file_name, armcpu_const.RAW_BIN)
         print colorful.bold_green("Loaded binary file: {}".format(file_name))
 
     def do_fileelf(self, line):
@@ -108,27 +89,22 @@ class ArmjitsuCmd(Cmd):
     def do_run(self, line):
         banner("Running")
         self.arm_dbg.use_step_mode = False
-        self.arm_dbg.stop_now = False
-        self.arm_dbg.run()
-
+        self.arm_dbg.start_execution()
 
     def do_continue(self, line):
         self.arm_dbg.use_step_mode = False
         self.arm_dbg.stop_now = False
         self.arm_dbg.run()
 
-
     def do_regs(self, line):
         """Display registers."""
         banner("Registers")
         self.arm_dbg.dump_regs()
 
-
     def do_step(self, line):
         self.arm_dbg.use_step_mode = True
         self.arm_dbg.stop_now = False
         self.arm_dbg.run()
-
 
     # TODO: RF - check for error conditions
     def do_x(self, line):
@@ -153,7 +129,6 @@ class ArmjitsuCmd(Cmd):
 
 
         print " ".join(data_list)
-
 
     # TODO: Fix up
     def do_break(self, line):

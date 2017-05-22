@@ -1,6 +1,6 @@
 # Armjitsu specific
 *.log
-
+*.bin
 
 
 # Byte-compiled / optimized / DLL files

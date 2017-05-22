@@ -10,7 +10,7 @@ import os.path
 from elftools.elf.elffile import ELFFile
 
 
-def read_bin_file(target_file):
+def read_raw_arm_code(target_file):
     """Read binary contents of file that contains executable code to emulate"""
 
     if not target_file:
