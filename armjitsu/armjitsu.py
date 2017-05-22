@@ -75,8 +75,6 @@ class ArmjitsuCmd(Cmd):
     prompt = colorful.bold_white("(armjitsu) ")
     ruler = "-"
 
-    # Init with code in source for development etc...
-    # Eventually this will be where we read in code from file
     def __init__(self):
         Cmd.__init__(self)
 
@@ -87,8 +85,6 @@ class ArmjitsuCmd(Cmd):
     def do_EOF(self, line):
         return True
 
-
-    # --- Implement supported commands
 
     def do_file(self, line):
         if not line:

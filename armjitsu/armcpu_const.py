@@ -1,3 +1,4 @@
+PAGE_SIZE = 4096
 
 RAW_BIN = 0
 ELF_BIN  = 1
