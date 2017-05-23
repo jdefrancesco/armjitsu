@@ -68,43 +68,30 @@ class ArmjitsuCmd(Cmd):
         return True
 
     def do_file(self, line):
+        banner("Loading binary...")
         if not line:
             print "Supply a file name please!"
             return
 
-        file_name = line
+        file_name = is_file(line)
         self.arm_dbg = armcpu.ArmCPU(file_name, armcpu_const.RAW_BIN)
         print colorful.bold_green("Loaded binary file: {}".format(file_name))
 
-    def do_fileelf(self, line):
-        if not line:
-            print "Supply a file name please!"
-            return
-
-        file_name = line
-        self.arm_dbg = armcpu.ArmCPU(file_name, bin_type="ELF")
-        if self.arm_dbg.is_init:
-            print colorful.bold_green("Loaded ELF binary file: {}".format(file_name))
-
     def do_run(self, line):
         banner("Running")
-        self.arm_dbg.use_step_mode = False
         self.arm_dbg.start_execution()
 
     def do_continue(self, line):
-        self.arm_dbg.use_step_mode = False
-        self.arm_dbg.stop_now = False
-        self.arm_dbg.run()
+        banner("Banner")
+        self.arm_dbg.continue_execution()
 
     def do_regs(self, line):
         """Display registers."""
         banner("Registers")
-        self.arm_dbg.dump_regs()
+        self.arm_dbg.context_registers()
 
     def do_step(self, line):
-        self.arm_dbg.use_step_mode = True
-        self.arm_dbg.stop_now = False
-        self.arm_dbg.run()
+        self.arm_dbg.step_execution()
 
     # TODO: RF - check for error conditions
     def do_x(self, line):

@@ -143,8 +143,6 @@ class ArmCPU(object):
                 self.start_addr |= 1
 
             self.stop_next_instruction = False
-            self.use_step_mode = False
-
             self.emu.emu_start(self.start_addr, self.end_addr)
         except UcError as err:
             logger.critical("Error starting emulator. Shutting down...!")
@@ -160,8 +158,15 @@ class ArmCPU(object):
 
     def continue_execution(self):
         """Continue emulation after a pause possibly caused by a breakpoint or inturrupt."""
+        self.use_step_mode = False
         self.stop_next_instruction = False
         self.start_addr = self.continue_addr
+        self.start_execution()
+
+    def step_execution(self):
+        """Enable stepping through binary."""
+        self.use_step_mode = True
+        self.stop_next_instruction = False
         self.start_execution()
 
     def mem_map(self, addr, code, size):
@@ -221,6 +226,7 @@ class ArmCPU(object):
         md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
         if self.thumb_mode:
             md.mode = capstone.CS_MODE_THUMB
+        print "{}".format(binascii.hexlify(code))
         for i in md.disasm(bytes(code), addr):
             return i
 
