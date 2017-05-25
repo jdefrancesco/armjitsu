@@ -1,6 +1,10 @@
 # Armjitsu specific
 *.log
+*.bin
 
+# Tasking list stuff
+.idea
+-TaskList*
 
 
 # Byte-compiled / optimized / DLL files

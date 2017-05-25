@@ -9,17 +9,24 @@ import os.path
 
 from elftools.elf.elffile import ELFFile
 
-
-def read_bin_file(target_file):
-    """Read binary contents of file that contains executable code to emulate"""
+def is_file(target_file):
+    """Simple check if target_file is valid for usage."""
 
     if not target_file:
         return False
 
-
     # At least check if file exists in some matter at all at some point.
     if not os.path.isfile(target_file) and os.access(target_file, os.R_OK):
-        raise IOError("Error obtaining file")
+        return False
+
+    return True
+
+
+def read_raw_arm_code(target_file):
+    """Read binary contents of file that contains executable code to emulate"""
+
+    if not is_file(target_file):
+        return False
 
     with open(target_file, "rb") as bin_file:
         bin_code = bin_file.read()

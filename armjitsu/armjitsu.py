@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+# WARNING: Because I was informed of dead line so suddenly, the code needs major refactoring.
+# A lot of this code is axcting just as PoC to meet the deadline. It is functional but not well tested.
+# Next revision, with additional funding, I plan to implement the rest of the code-base as I had originally envisioned.
+
 __author__ = "Joey DeFrancesco"
 __version__ = "0.1"
 
@@ -9,12 +13,16 @@ import sys
 import argparse
 import string
 import logging
+import unicorn
 from binascii import hexlify
+
 from cmd2 import Cmd, make_option, options
 
 import colorful
 
 import armcpu
+
+import armcpu_const
 import armjit_const
 
 from ui import *
@@ -42,87 +50,91 @@ ADDRESS = 0x10000
 # ARM and Thumb instructions mixed
 # ARM_MIXED = "\xd1\xe8\x00\xf0\xf0\x24\x04\x07\x1f\x3c\xf2\xc0\x00\x00\x4f\xf0\x00\x01\x46\x6c"
 
-
-
-ARM_CODE4 = ("\x01\x60\x8f\xe2"
-"\x16\xff\x2f\xe1"
-"\x40\x40"
-"\x78\x44"
-"\x0c\x30"
-"\x49\x40"
-"\x52\x40"
-"\x0b\x27"
-"\x01\xdf"
-"\x01\x27"
-"\x01\xdf"
-"\x2f\x2f"
-"\x62\x69\x6e\x2f"
-"\x2f\x73"
-"\x68")
-
-
-
+colorful.use_style('solarized')
 
 class ArmjitsuCmd(Cmd):
     """Command dispatch loop"""
 
-    prompt = colorful.bold_white("(armjitsu) ")
+    prompt = colorful.bold_green("(armjitsu) ")
     ruler = "-"
+    debug = True
 
-    # Init with code in source for development etc...
-    # Eventually this will be where we read in code from file
     def __init__(self):
         Cmd.__init__(self)
 
+        self.bin_loaded = False
+        self.bin_running = False
+
         self.arm_dbg = None
-        self.code = None
 
 
-    def do_EOF(self, line):
-        return True
+    @options([make_option('-l', '--list', action="store_true", help="Show supported binary formats."),
+              make_option('-r', '--raw', action="store_true", help="Load ARM RAW/Shellcode from file."),
+              make_option('-e', '--elf', action="store_true", help="Load ARM ELF binary from file.")
+             ])
+    def do_file(self, args, opts=None):
+        """
+        Load an ARM binary file for emulation and debugging.
+        To list ARMjitsu supported binary formats invoke:
 
+        (armjitsu) file --list
+        """
+        BIN_TYPE = armcpu_const.RAW_BIN
+        if opts.raw:
+            BIN_TYPE = armcpu_const.RAW_BIN
+        elif opts.elf:
+            BIN_TYPE = armcpu_const.ELF_BIN
 
-    # --- Implement supported commands
-
-    def do_file(self, line):
+        line = args
         if not line:
-            print "Supply a file name please!"
-            return
+            print colorful.yellow("Supply the filename of the binary you wish to load please.")
+            return None
 
-        file_name = line
-        try:
-            self.code = read_bin_file(file_name)
-        except IOError as e:
-            print "[-] Error reading code from file!"
+        file_name = line if is_file(line) else None
+        if not file_name or BIN_TYPE:
+            print colorful.yellow("Error with supplied filename.")
+            return False
 
-        self.arm_dbg = armcpu.ArmCPU(self.code)
-        print colorful.bold_green("Loaded binary file: {}".format(file_name))
+        self.arm_dbg = armcpu.ArmCPU(file_name, BIN_TYPE)
+        self.bin_loaded = True
+
+        print colorful.base1("Loaded binary file: {}".format(file_name))
+
+    # Synonyms for do_file
+    do_load = do_file
 
 
     def do_run(self, line):
-        banner("Running")
-        self.arm_dbg.use_step_mode = False
-        self.arm_dbg.stop_now = False
-        self.arm_dbg.run()
+        """Begins execution of ARM binary."""
+        if not self.bin_running:
+            self.bin_running = True
+        else:
+            print colorful.yellow("Process is already running.")
+            return None
+
+        self.arm_dbg.start_execution()
+
+    do_start = do_run
+    do_r = do_run
 
 
     def do_continue(self, line):
-        self.arm_dbg.use_step_mode = False
-        self.arm_dbg.stop_now = False
-        self.arm_dbg.run()
+        """Continue execution from a paused state."""
+        self.arm_dbg.continue_execution()
+
+    do_c = do_continue
+    do_con = do_continue
 
 
-    def do_regs(self, line):
+    def do_registers(self, line):
         """Display registers."""
-        banner("Registers")
-        self.arm_dbg.dump_regs()
+        self.arm_dbg.context_registers()
+
+    do_regs = do_registers
 
 
     def do_step(self, line):
-        self.arm_dbg.use_step_mode = True
-        self.arm_dbg.stop_now = False
-        self.arm_dbg.run()
-
+        self.arm_dbg.step_execution()
 
     # TODO: RF - check for error conditions
     def do_x(self, line):
@@ -142,27 +154,20 @@ class ArmjitsuCmd(Cmd):
         # Print our data
         data = self.arm_dbg.read_mem(address, size)
         data_list = []
+
         for i in data:
             data_list.append("0x{:02x} ".format(i))
-
 
         print " ".join(data_list)
 
 
-    # TODO: Fix up
+    @options([make_option('-l', '--list', action="store_false", help="List all set breakpoints.")])
     def do_break(self, line):
-        break_input = int(line, 16)
-        logger.debug("".format(self.arm_dbg.break_points))
-        self.arm_dbg.set_breakpoint_address(break_input)
-
-
-    def do_blist(self, line):
-        print colorful.bold_orange(self.arm_dbg.list_breakpoints())
+        pass
 
 
     def do_info(self, line):
         pass
-
 
     def do_exit(self, line):
         print "Exiting..."
@@ -171,7 +176,7 @@ class ArmjitsuCmd(Cmd):
 if __name__ == "__main__":
 
 
-    show_logo()
+    #show_logo()
 
     parser = argparse.ArgumentParser(description="ARMulator - ARM 32-bit emulator for instropection into arcane binaries")
     parser.add_argument("-t", "--tui", action="store_true", dest="tui_switch",
