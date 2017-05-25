@@ -1,4 +1,9 @@
-"""This module contains all the hooks that may be used by unicorn. main_code_hook() is of great importance; it supplies the debugging like capabilities."""
+"""This module contains all the hooks that may be used by unicorn.
+
+main_code_hook() is of great importance; it supplies the debugging
+like capabilities.
+"""
+
 import logging
 
 from unicorn import *
@@ -10,6 +15,9 @@ logger = logging.getLogger(armjit_const.LOGGER_NAME)
 
 
 def main_code_hook(uc, address, size, emu):
+    """Hook that is invoked per instruction to give debugger like control."""
+
+    import ipdb; ipdb.set_trace()
 
     # Check for THUMB Mode
     emu.thumb_mode = True if size == 2 else False
@@ -18,7 +26,7 @@ def main_code_hook(uc, address, size, emu):
     insn = emu.disassemble_one_instruction(code, address)
 
     if emu.stop_next_instruction:
-        emu.stop_execution()
+        emu.stop_execution(last_pc=address)
         return
 
     # Check for breakpoints
@@ -30,10 +38,8 @@ def main_code_hook(uc, address, size, emu):
     if insn:
         print "0x{:08x}: {:s} {:s}".format(insn.address, insn.mnemonic, insn.op_str)
 
-    # If we are stepping we set stop_now, so next hook call we 'pause' emulator.
+    # Debugging command invoked, pause next instruction.
     if emu.use_step_mode:
         emu.stop_next_instruction = True
 
     return True
-
-
