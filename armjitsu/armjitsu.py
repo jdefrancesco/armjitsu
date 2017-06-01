@@ -53,6 +53,7 @@ ADDRESS = 0x10000
 
 colorful.use_style('solarized')
 
+
 class ArmjitsuCmd(Cmd):
     """Command dispatch loop"""
 
@@ -112,7 +113,6 @@ class ArmjitsuCmd(Cmd):
         self.arm_dbg = armcpu.ArmCPU("armraw.bin", armcpu_const.RAW_BIN)
         self.bin_loaded = True
         print colorful.bold_red("Developer testing mode! armraw.bin loaded!")
-
 
         print colorful.base1("Loaded binary file: {}".format(file_name))
 
