@@ -6,6 +6,7 @@ __author__ = "Joey DeFrancesco"
 
 import logging
 import binascii
+import colorful
 
 from unicorn import *
 from unicorn.arm_const import *
@@ -14,10 +15,16 @@ import capstone
 import armcpu_const
 import armjit_const
 
+import snapshot
 from ui import *
 from utils import *
 
+
+from elftools.elf.elffile import ELFFile
+from elftools.elf.relocation import RelocationSection
+
 import hooks
+
 
 # pylint: disable-
 
@@ -42,14 +49,17 @@ class ArmCPU(object):
         self.file_name = file_name
         self.bin_type = bin_type
 
+        self.snapshot = None
+        self.hide_instructions = False
+
         # Our emulator object from unicorn
         self.emu = None
         self.is_init = False
 
-        self.code = dict()
         self.start_addr = 0x0
         self.end_addr = 0x0
         self.continue_addr = 0x0
+        self.code_start_addr = None
 
         # Attributes for handling breakpoints
         self.use_step_mode = False
@@ -65,7 +75,7 @@ class ArmCPU(object):
         self.registers = dict()
         self.thumb_mode = False
 
-        self.mem_regions = []
+        self.mem_regions = dict()
 
         self.full_disassembly = dict()
         self.show_asm = False
@@ -79,22 +89,22 @@ class ArmCPU(object):
         try:
             self.emu = Uc(UC_ARCH_ARM, UC_MODE_ARM)
             self._emu_init_memory()
-            self._emu_init_registers()
             self._emu_init_hooks()
         except UcError as err:
             print colorful.bold_red("Error initializing emulator: {}".format(err))
             return False
 
+        self.reg_write(UC_ARM_REG_PC, self.start_addr)
         self.is_init = True
         return True
 
-    def _emu_init_memory(self, bin_type=armcpu_const.RAW_BIN):
-        if bin_type == armcpu_const.RAW_BIN:
+    def _emu_init_memory(self):
+        if self.bin_type == armcpu_const.RAW_BIN:
             self._load_raw_arm_binary_img()
-
-    def _emu_init_registers(self):
-        """Set registers to initial values."""
-        pass
+        elif self.bin_type == armcpu_const.INI_BIN:
+            self._load_ini_snapshot()
+        elif self.bin_type == armcpu_const.SNAPSHOT_BIN:
+            self._load_snapshot_file()
 
     def _emu_init_hooks(self):
         """Set emulator hooks."""
@@ -103,25 +113,32 @@ class ArmCPU(object):
     def _emu_mem_map(self, segment_name, addr, code, size):
         """Map memory into emulator, ensuring we load data with correct alignment."""
         PAGE_SIZE = armcpu_const.PAGE_SIZE
+
         alignment = addr % PAGE_SIZE
         base_addr = addr - alignment
 
         page_size = (int(size / PAGE_SIZE) * PAGE_SIZE) + PAGE_SIZE
+        logger.debug("page_size = {}".format(page_size))
 
+        # This implicitly sets PC I believe.
         if segment_name == ".text":
             self.start_addr = base_addr
+            self.code_start_addr = self.start_addr
             self.end_addr = base_addr + len(code)
+            self.reg_write(UC_ARM_REG_PC, self.start_addr)
+
+        elif segment_name == ".stack":
+            self.reg_write(UC_ARM_REG_SP, base_addr)
 
         self.emu.mem_map(base_addr, page_size)
-        self.emu.mem_write(base_addr, code)
+        self.emu.mem_write(base_addr, bytes(code))
 
-    def read_reg(self, reg="R0"):
-        r_reg = "UC_ARM_REG_{}".format(reg.upper())
-        return self.emu.reg_read(r_reg)
+    def reg_read(self, reg=UC_ARM_REG_R0):
+        return self.emu.reg_read(reg)
 
-    def write_reg(self, val, reg="R0"):
-        w_reg = "UC_ARM_REG_{}".format(reg.upper())
-        return self.emu.reg_write(w_reg)
+    def reg_write(self, reg=UC_ARM_REG_R0, data=0x0):
+        """Wrap unicorns reg_write. Deals with ARM regs easier."""
+        self.emu.reg_write(reg, data)
 
     def write_mem(self, addr, val):
         """Write size bytes of memory to addr."""
@@ -142,7 +159,6 @@ class ArmCPU(object):
             if self.thumb_mode:
                 self.start_addr |= 1
 
-            self.stop_next_instruction = False
             self.emu.emu_start(self.start_addr, self.end_addr)
         except UcError as err:
             logger.critical("Error starting emulator. Shutting down...!")
@@ -151,16 +167,24 @@ class ArmCPU(object):
 
         return True
 
-    def stop_execution(self, last_pc):
+    def start_execution_no_catch(self):
+        """Starts execution without exception handling"""
+        if self.thumb_mode:
+            self.start_addr |= 1
+        self.hide_instructions = True
+        self.stop_next_instruction = False
+        self.emu.emu_start(self.start_addr, self.end_addr)
+
+    def stop_execution(self, next_pc):
         """Stop execution of emulator."""
-        self.continue_addr = last_pc
+        self.use_step_mode = False
+        self.stop_next_instruction = False
+        self.start_addr = next_pc
         self.emu.emu_stop()
 
     def continue_execution(self):
-        """Continue emulation after a pause possibly caused by a breakpoint or inturrupt."""
         self.use_step_mode = False
         self.stop_next_instruction = False
-        self.start_addr = self.continue_addr
         self.start_execution()
 
     def step_execution(self):
@@ -189,12 +213,12 @@ class ArmCPU(object):
 
     def set_breakpoint_address(self, break_addr):
         """Set a breakpoint by address."""
-        break_addr = int(break_addr, 16)
-        if  not self.start_addr <= break_addr <= self.end_addr:
-            raise AddressOutOfRange("Address is out of .text memory range!")
-        else:
-            bp_id = self._next_bp_id()
-            self.instruction_breakpoints[break_addr] = bp_id
+        #break_addr = int(break_addr, 16)
+        #if not self.start_addr <= break_addr <= self.end_addr:
+        #    raise AddressOutOfRange("Address is out of .text memory range!")
+        #else:
+        bp_id = self._next_bp_id()
+        self.instruction_breakpoints[break_addr] = bp_id
 
     def remove_breakpoint_address(self, break_id):
         pass
@@ -221,12 +245,11 @@ class ArmCPU(object):
         md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
         self.disassembly = { inst.address: (inst.mnemonic, inst.op_str, inst.size)  for inst in md.disasm(code, self.saved_start) }
 
-
     def disassemble_one_instruction(self, code, addr):
         md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
         if self.thumb_mode:
             md.mode = capstone.CS_MODE_THUMB
-        print "{}".format(binascii.hexlify(code))
+        #print "{}".format(binascii.hexlify(code))
         for i in md.disasm(bytes(code), addr):
             return i
 
@@ -236,51 +259,126 @@ class ArmCPU(object):
     def context_registers(self):
         """Show contents of ARM registers."""
 
+        colorful.bold_white = colorful.bold_base2
+        regs_list = []
+
         # Dump registers R0 to R9
         for reg in xrange(UC_ARM_REG_R0, UC_ARM_REG_R0 + 10):
-            reg_string = "R{:<3d} = 0x{:08x}".format((reg-UC_ARM_REG_R0),
-                                                         self.emu.reg_read(reg))
-            print reg_string
+            reg_string = colorful.bold_white("R{:d}:".format(reg-UC_ARM_REG_R0)) + colorful.bold_base01("  0x{:08x}".format(self.emu.reg_read(reg)))
+            regs_list.append(reg_string)
 
         # Dump registers with alias
-        print ""
-        print "SL   = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_SL))
-        print "FP   = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_FP))
-        print "IP   = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_IP))
-        print "SP   = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_SP))
-        print "LR   = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_LR))
-        print "PC   = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_PC))
-        print "CPSR = 0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_CPSR))
-        print ""
+        sl_reg = colorful.bold_white("SL:") + colorful.base01("  0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_SL)))
+        fp_reg = colorful.bold_white("FP:") + colorful.base01("  0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_FP)))
+        ip_reg = colorful.bold_white("IP:") + colorful.base01("  0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_IP)))
+        sp_reg = colorful.bold_white("SP:") + colorful.base01("  0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_SP)))
+        lr_reg = colorful.bold_white("LR:") + colorful.base01("  0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_LR)))
+        pc_reg = colorful.bold_white("PC:") + colorful.base01("  0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_PC)))
+        cpsr_reg = colorful.bold_white("CPSR:") + colorful.base01("  0x{:08x}".format(self.emu.reg_read(UC_ARM_REG_CPSR)))
 
+        regs_list.extend([sl_reg, fp_reg, ip_reg, sp_reg, lr_reg, pc_reg, cpsr_reg])
+
+        table_show_registers(regs_list)
+
+    def context_registers_str(self):
+        """Returns contents of ARM registers as a string"""
+
+        result = ""
+
+        # Dump registers R0 to R9
+        for reg in xrange(UC_ARM_REG_R0, UC_ARM_REG_R0 + 10):
+            reg_string = "R{:<3d} = 0x{:08x}".format((reg - UC_ARM_REG_R0),
+                                                     self.emu.reg_read(reg))
+            result += reg_string + "\n"
+
+        # Dump registers with alias
+        result += "\nSL   = 0x{:08x}\n".format(self.emu.reg_read(UC_ARM_REG_SL))
+        result += "FP   = 0x{:08x}\n".format(self.emu.reg_read(UC_ARM_REG_FP))
+        result += "IP   = 0x{:08x}\n".format(self.emu.reg_read(UC_ARM_REG_IP))
+        result += "SP   = 0x{:08x}\n".format(self.emu.reg_read(UC_ARM_REG_SP))
+        result += "LR   = 0x{:08x}\n".format(self.emu.reg_read(UC_ARM_REG_LR))
+        result += "PC   = 0x{:08x}\n".format(self.emu.reg_read(UC_ARM_REG_PC))
+        result += "CPSR = 0x{:08x}\n".format(self.emu.reg_read(UC_ARM_REG_CPSR))
+
+        return result
 
     def context_code(self):
         pass
 
-
     def context_stack(self):
         pass
 
-
     def context_backtrace(self):
         pass
-
 
     def _load_raw_arm_binary_img(self):
         """Load raw ARM code or shellcode into emulator."""
         raw_code = read_raw_arm_code(self.file_name)
 
-        #TODO: Allow user to set sefment_size
-        segment_size = 1 * 1024 * 1024
-        base_addr = 0x1000000
-        segment_name = ".text"
-        self.code[segment_name] = [raw_code, base_addr, segment_size]
-        self._emu_mem_map(segment_name, base_addr, raw_code, segment_size)
+        # .section = [data, base_addr, size]
+        self.mem_regions[".text"] = [raw_code, 0x1000000, 0x100000]
+        self.mem_regions[".data"] = [None, 0x60000, 0x10000]
+        self.mem_regions[".stack"] = [None, 0x800000, 0xC00]
 
-        logging.debug("{} loaded at 0x{:08x}, size = {}".format(segment_name, base_addr, segment_size))
+        for k_seg_name, v_map_list in self.mem_regions.iteritems():
+            code, addr, size = v_map_list
+            self._emu_mem_map(k_seg_name, addr, code, size)
 
     def _load_elf_binary_img(self):
-        pass
+        file_name = self.file_name
+        with open(file_name, "rb") as f:
+            elf_file = ELFFile(f)
+            pass
+
+    def _load_ini_snapshot(self):
+        self.snapshot = snapshot.Snapshot(self.file_name, True)
+        self._init_snapshot_memory()
+
+    def _load_snapshot_file(self):
+        self.snapshot = snapshot.Snapshot(self.file_name)
+        self._init_snapshot_memory()
+
+    def _init_snapshot_memory(self):
+        # read registers
+        regs = self.snapshot.snapshot_cpu_registers()
+
+        # Unused:
+        # R13_SVC, R14_SVC, R13_ABT, R14_ABT, R13_UND, R14_UND, R13_IRQ, R14_IRQ, R8_FIQ, R9_FIQ
+        # R10_FIQ, R11_FIQ, R12_FIQ, R13_FIQ, R14_FIQ, SPSR_SVC, SPSR_ABT, SPSR_UND, SPSR_IRQ, SPSR_FIQ
+
+        # write registers R0 - R12
+        reg_count = 0
+        for reg in xrange(UC_ARM_REG_R0, UC_ARM_REG_R12 + 1):
+            self.emu.reg_write(reg, regs["R{}".format(reg_count)])
+            reg_count += 1
+
+        self.emu.reg_write(UC_ARM_REG_SP, regs["R13"])
+        self.emu.reg_write(UC_ARM_REG_LR, regs["R14"])
+        self.emu.reg_write(UC_ARM_REG_PC, regs["R15"])
+        self.emu.reg_write(UC_ARM_REG_CPSR, regs["CPSR"])
+
+        page_count = self.snapshot.snapshot_page_count()
+        pages = self.snapshot.snapshot_get_pages()
+
+        for x in xrange(page_count):
+            page = pages.next()
+
+            # TODO: Support snapshot files
+            #if self.bin_type == armcpu_const.INI_BIN:
+            base_address = page["baseAddress"]
+            #elif self.bin_type == armcpu_const.SNAPSHOT_BIN:
+                #base_address =
+            memory_page = page["memoryPage"]
+            prot = page["loadProtectionFlags"]
+
+            self.emu.mem_map(base_address, len(memory_page), prot)
+            self.emu.mem_write(base_address, memory_page)
+
+        # self.emu.hook_add(UC_HOOK_CODE, hooks.main_code_hook, self)
+
+        self.start_addr = regs["R15"]
+        self.continue_addr = self.start_addr
+        self.end_addr = 0xffffffffffffffff
 
     def _next_bp_id(self):
         """Returns a unique integer. Allows us to give IDs to breakpoints."""
@@ -295,3 +393,11 @@ class ArmCPU(object):
 
         self.emu = None
         self.is_init = False
+
+    def logger_show_context(self):
+        if self.is_init:
+            logger.debug("is_init set".format())
+        if self.use_step_mode:
+            logger.debug("step-mode set".format())
+        logger.debug("".format())
+        logger.debug("".format())
