@@ -52,6 +52,8 @@ ADDRESS = 0x10000
 
 colorful.use_style('solarized')
 
+
+
 class ArmjitsuCmd(Cmd):
     """Command dispatch loop"""
 
@@ -66,6 +68,9 @@ class ArmjitsuCmd(Cmd):
         self.bin_running = False
 
         self.arm_dbg = None
+
+        if DEBUG_MODE:
+            import ipdb; ipdb.set_trace()
 
 
     @options([make_option('-l', '--list', action="store_true", help="Show supported binary formats."),
@@ -103,6 +108,13 @@ class ArmjitsuCmd(Cmd):
     # Synonyms for do_file
     do_load = do_file
 
+    # REMOVE AFTER DEV
+    def do_testing(self, line):
+        self.arm_dbg = armcpu.ArmCPU("armraw.bin", armcpu_const.RAW_BIN)
+        self.bin_loaded = True
+        print colorful.bold_red("Developer testing mode! armraw.bin loaded!")
+
+    do_t = do_testing
 
     def do_run(self, line):
         """Begins execution of ARM binary."""
@@ -125,15 +137,15 @@ class ArmjitsuCmd(Cmd):
     do_c = do_continue
     do_con = do_continue
 
-
     def do_registers(self, line):
         """Display registers."""
         self.arm_dbg.context_registers()
 
     do_regs = do_registers
 
-
     def do_step(self, line):
+        self.arm_dbg.stop_next_instruction = False
+        self.arm_dbg.use_step_mode = True
         self.arm_dbg.step_execution()
 
     # TODO: RF - check for error conditions
@@ -175,8 +187,9 @@ class ArmjitsuCmd(Cmd):
 
 if __name__ == "__main__":
 
+    show_logo()
 
-    #show_logo()
+    DEBUG_MODE = False
 
     parser = argparse.ArgumentParser(description="ARMulator - ARM 32-bit emulator for instropection into arcane binaries")
     parser.add_argument("-t", "--tui", action="store_true", dest="tui_switch",
@@ -187,8 +200,11 @@ if __name__ == "__main__":
     parser.add_argument("-e", "--emutest", help="For developer use. ARMjitsu will emulate machine code embedded in source.")
     parser.add_argument("-v", "--version", action="version", version="")
     parser.add_argument("-s", "--snapshot", dest="snapshot_file", help="")
+    parser.add_argument("-d", "--debug", action="store_true", help="Starts ARMjitsu in debugging mode. For developers only.")
+    args = parser.parse_args()
 
-    results = parser.parse_args()
+    if args.debug:
+        DEBUG_MODE = True
 
     # Command dispatch loop
     a = ArmjitsuCmd()

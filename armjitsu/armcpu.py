@@ -18,12 +18,16 @@ import armjit_const
 from ui import *
 from utils import *
 
-import hooks
 
+from elftools.elf.elffile import ELFFile
+from elftools.elf.relocation import RelocationSection
+
+import hooks
 
 # pylint: disable-
 
 logger = logging.getLogger(armjit_const.LOGGER_NAME)
+
 
 class AddressOutOfRange(Exception):
     """AddressOutOfRange Exception for Addresses not valid in code space."""
@@ -72,6 +76,7 @@ class ArmCPU(object):
         self.full_disassembly = dict()
         self.show_asm = False
 
+
         # Prepare ARM emulator for execution and debugging
         self._emu_init()
 
@@ -113,8 +118,8 @@ class ArmCPU(object):
             self.start_addr = base_addr
             self.code_start_addr = self.start_addr
             self.end_addr = base_addr + len(code)
+            self.reg_write(UC_ARM_REG_PC, self.start_addr)
 
-            #TODO: SET PC TO START
         elif segment_name == ".stack":
             self.reg_write(UC_ARM_REG_SP, base_addr)
 
@@ -140,18 +145,14 @@ class ArmCPU(object):
         for o, b in enumerate(val):
             current_addr = addr + offset
             self.memory[current_addr] = byte
+
     # TODO: Stepping and main hook
     def start_execution(self):
         """Starts execution."""
+
         try:
             if self.thumb_mode:
                 self.start_addr |= 1
-
-            self.use_step_mode = False
-            self.stop_next_instruction = False
-
-            logger.debug("starting address = 0x{:08x}; thumb mode = {}".format(self.start_addr, self.thumb_mode))
-            logger.debug("step mode = {}\nstop_next_instruction = {}\n".format(self.use_step_mode, self.stop_next_instruction))
 
             self.emu.emu_start(self.start_addr, self.end_addr)
         except UcError as err:
@@ -161,17 +162,17 @@ class ArmCPU(object):
 
         return True
 
-    def stop_execution(self, last_pc):
+    def stop_execution(self, next_pc):
         """Stop execution of emulator."""
-        self.continue_addr = last_pc
+        self.use_step_mode = False
+        self.stop_next_instruction = False
+        self.start_addr = next_pc
         self.emu.emu_stop()
 
-    def continue_execution(self, new_pc):
-        # TODO : set new start addr and then call start_exec
-        pass
-
-
-
+    def continue_execution(self):
+        self.use_step_mode = False
+        self.stop_next_instruction = False
+        self.start_execution()
 
     def step_execution(self):
         """Enable stepping through binary."""
@@ -230,7 +231,6 @@ class ArmCPU(object):
         address = self.saved_start
         md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
         self.disassembly = { inst.address: (inst.mnemonic, inst.op_str, inst.size)  for inst in md.disasm(code, self.saved_start) }
-
 
     def disassemble_one_instruction(self, code, addr):
         md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
@@ -292,7 +292,10 @@ class ArmCPU(object):
             self._emu_mem_map(k_seg_name, addr, code, size)
 
     def _load_elf_binary_img(self):
-        pass
+        file_name = self.file_name
+        with open(file_name, "rb") as f:
+            elf_file = ELFFile(f)
+            pass
 
     def _next_bp_id(self):
         """Returns a unique integer. Allows us to give IDs to breakpoints."""
