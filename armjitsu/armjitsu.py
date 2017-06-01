@@ -96,7 +96,7 @@ class ArmjitsuCmd(Cmd):
             return None
 
         file_name = line if is_file(line) else None
-        if not file_name or BIN_TYPE:
+        if not file_name or not BIN_TYPE:
             print colorful.yellow("Error with supplied filename.")
             return False
 

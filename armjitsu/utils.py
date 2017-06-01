@@ -85,3 +85,18 @@ def read_elf_bin_file_segments(target_file):
                                  seg.header['p_memsz'], seg.data()))
 
     return elf_segments
+
+
+def elf_ingest(target_file):
+
+    file_name = target_file
+
+    elf_entry = read_elf_entry(file_name)
+
+    elf_segs = read_elf_bin_file_segments(file_name)
+    loadable_segs = []
+    for p_type, p_vaddr, p_memsz, seg_data in elf_segs:
+        if p_type == "PT_LOAD":
+            loadable_segs.append((p_type, p_vaddr, p_memsz, seg_data))
+
+    return elf_entry, loadable_segs

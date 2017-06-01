@@ -18,10 +18,6 @@ import armjit_const
 from ui import *
 from utils import *
 
-
-from elftools.elf.elffile import ELFFile
-from elftools.elf.relocation import RelocationSection
-
 import hooks
 
 # pylint: disable-
@@ -85,7 +81,7 @@ class ArmCPU(object):
 
         try:
             self.emu = Uc(UC_ARCH_ARM, UC_MODE_ARM)
-            self._emu_init_memory()
+            self._emu_init_memory(self.bin_type)
             self._emu_init_hooks()
         except UcError as err:
             print colorful.bold_red("Error initializing emulator: {}".format(err))
@@ -98,6 +94,8 @@ class ArmCPU(object):
     def _emu_init_memory(self, bin_type=armcpu_const.RAW_BIN):
         if bin_type == armcpu_const.RAW_BIN:
             self._load_raw_arm_binary_img()
+        elif bin_type == armcpu_const.ELF_BIN:
+            self._load_elf_binary_img()
 
     def _emu_init_hooks(self):
         """Set emulator hooks."""
@@ -146,7 +144,6 @@ class ArmCPU(object):
             current_addr = addr + offset
             self.memory[current_addr] = byte
 
-    # TODO: Stepping and main hook
     def start_execution(self):
         """Starts execution."""
 
@@ -222,9 +219,6 @@ class ArmCPU(object):
         else:
             print "No breakpoints currently set."
 
-    def remove_breakpoint(self):
-        pass
-
     def full_disassembly(self):
         """Disassemble entire ARM binary at once and displays results in list dict self.disassembly."""
         code = self.code
@@ -291,11 +285,28 @@ class ArmCPU(object):
             code, addr, size = v_map_list
             self._emu_mem_map(k_seg_name, addr, code, size)
 
+
     def _load_elf_binary_img(self):
-        file_name = self.file_name
-        with open(file_name, "rb") as f:
-            elf_file = ELFFile(f)
-            pass
+        elf_entry = 0
+        loadable_segs = []
+        elf_entry, loadable_segs = elf_ingest(self.file_name)
+
+        p_type, p_vaddr, p_memsz, seg_data = loadable_segs[0]
+        self.mem_regions[".text"] = [seg_data, p_vaddr, p_memsz]
+
+        p_type, p_vaddr, p_memsz, seg_data = loadable_segs[1]
+        self.mem_regions[".data"] = [seg_data, p_vaddr, p_memsz]
+
+        self.mem_regions[".stack"] = [None, 0x800000, 0xC08]
+
+        for k_seg_name, v_map_list in self.mem_regions.iteritems():
+            code, addr, size = v_map_list
+            self._emu_mem_map(k_seg_name, addr, code, size)
+
+        # Overwrite what is done by emu_mem_map, ELF bins work a bit different
+        self.emu.reg_write(UC_ARM_REG_PC, elf_entry)
+        self.start_addr = elf_entry
+        self.code_start_addr = elf_entry
 
     def _next_bp_id(self):
         """Returns a unique integer. Allows us to give IDs to breakpoints."""

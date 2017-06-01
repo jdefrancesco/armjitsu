@@ -44,3 +44,7 @@ def main_code_hook(uc, address, size, emu):
         emu.stop_next_instruction = True
 
     return True
+
+
+def mem_unmapped_hook(uc, address, size, emu):
+    pass

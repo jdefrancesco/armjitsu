@@ -1,7 +1,7 @@
 PAGE_SIZE = 4096
 
-RAW_BIN = 0
-ELF_BIN  = 1
+RAW_BIN = 1
+ELF_BIN  = 2
 
 
 ACCESS_NONE = 0
