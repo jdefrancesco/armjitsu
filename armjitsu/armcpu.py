@@ -72,7 +72,6 @@ class ArmCPU(object):
         self.full_disassembly = dict()
         self.show_asm = False
 
-
         # Prepare ARM emulator for execution and debugging
         self._emu_init()
 
