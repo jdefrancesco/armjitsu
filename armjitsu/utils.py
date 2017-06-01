@@ -9,6 +9,7 @@ import os.path
 
 from elftools.elf.elffile import ELFFile
 
+
 def is_file(target_file):
     """Simple check if target_file is valid for usage."""
 
@@ -48,6 +49,7 @@ def read_elf_entry(target_file):
 
     return entry_addr
 
+
 def read_elf_text_section(target_file):
     if not target_file:
         return False
@@ -56,11 +58,18 @@ def read_elf_text_section(target_file):
     if not os.path.isfile(target_file) and os.access(target_file, os.R_OK):
         raise IOError("Error obtaining file")
 
+    text_data = None
+
     with open(target_file, "rb") as bin_file:
         elf_bin = ELFFile(bin_file)
         for section in elf_bin.iter_sections():
-            if section.name.startswith(".text"):
+            if section.name == ".text":
                 text_data = bytes(section.data())
+                break
+
+    if text_data is None:
+        print "Unable to find .text section in ELF"
+        return False
 
     return text_data
 

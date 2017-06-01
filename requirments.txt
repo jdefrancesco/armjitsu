@@ -11,3 +11,5 @@ Pillow==4.1.0
 pyparsing==2.2.0
 six==1.10.0
 unicorn==1.0.0
+pyelftools==0.24
+construct==2.8.12

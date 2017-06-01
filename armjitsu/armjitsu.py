@@ -14,6 +14,7 @@ import argparse
 import string
 import logging
 import unicorn
+import time
 from binascii import hexlify
 
 from cmd2 import Cmd, make_option, options
@@ -51,8 +52,6 @@ ADDRESS = 0x10000
 # ARM_MIXED = "\xd1\xe8\x00\xf0\xf0\x24\x04\x07\x1f\x3c\xf2\xc0\x00\x00\x4f\xf0\x00\x01\x46\x6c"
 
 colorful.use_style('solarized')
-
-
 
 class ArmjitsuCmd(Cmd):
     """Command dispatch loop"""
@@ -114,6 +113,18 @@ class ArmjitsuCmd(Cmd):
         self.bin_loaded = True
         print colorful.bold_red("Developer testing mode! armraw.bin loaded!")
 
+
+        print colorful.base1("Loaded binary file: {}".format(file_name))
+
+    # Synonyms for do_file
+    do_load = do_file
+
+    # REMOVE AFTER DEV
+    def do_testing(self, line):
+        self.arm_dbg = armcpu.ArmCPU("armraw.bin", armcpu_const.RAW_BIN)
+        self.bin_loaded = True
+        print colorful.bold_red("Developer testing mode! armraw.bin loaded!")
+
     do_t = do_testing
 
     def do_run(self, line):
@@ -128,7 +139,6 @@ class ArmjitsuCmd(Cmd):
 
     do_start = do_run
     do_r = do_run
-
 
     def do_continue(self, line):
         """Continue execution from a paused state."""
@@ -172,11 +182,32 @@ class ArmjitsuCmd(Cmd):
 
         print " ".join(data_list)
 
-
     @options([make_option('-l', '--list', action="store_false", help="List all set breakpoints.")])
     def do_break(self, line):
         pass
 
+    def do_snapshot(self, line):
+        """ Load/Save a snapshot """
+        l = line.split()
+        usage = "snapshot load|save ini|file"
+        if len(l) != 3:
+            print usage
+            return
+
+        if l[0] == "load":
+            if l[1] == "ini":
+                bin_type = armcpu_const.INI_BIN
+            elif l[1] == "file":
+                bin_type = armcpu_const.SNAPSHOT_BIN
+            else:
+                print usage
+                return
+        else:
+            print usage
+            return
+
+        self.arm_dbg = armcpu.ArmCPU(l[2], bin_type)
+        print colorful.bold_green("Loaded snapshot: {}".format(l[2]))
 
     def do_info(self, line):
         pass
@@ -184,6 +215,71 @@ class ArmjitsuCmd(Cmd):
     def do_exit(self, line):
         print "Exiting..."
         return True
+
+
+class FuzzingFramework(object):
+    def __init__(self, snapshot_file, is_ini_file=False):
+        self.snapshot_file = snapshot_file
+        self.is_ini_file = is_ini_file
+
+        self.timed_out = False
+        self.got_exception = False
+        self.error_message = None
+        self.error_register_state = None
+
+        self._load_snapshot()
+
+    def _load_snapshot(self):
+        if self.is_ini_file:
+            bin_type = armcpu_const.INI_BIN
+        else:
+            bin_type = armcpu_const.SNAPSHOT_BIN
+            print "Snapshot file not supported yet"
+            raise NotImplementedError
+
+        self.arm_dbg = armcpu.ArmCPU(self.snapshot_file, bin_type)
+
+    def reload(self):
+        self.timed_out = False
+        self.got_exception = False
+        self.error_message = None
+        self.error_register_state = None
+        self._load_snapshot()
+
+    def write(self, addr, data):
+        """ Write data to memory location """
+        try:
+            self.arm_dbg.write_mem(addr, data)
+        except unicorn.UcError as e:
+            print "Error writing data to 0x{:X}".format(addr)
+            print "Unicorn returned: {}".format(e)
+            return False
+
+        return True
+
+    def write_exit_bp(self, addr):
+        """ End emulation if target address is hit """
+        self.arm_dbg.set_breakpoint_address(addr)
+
+    def run(self, timeout):
+        try:
+            delay = 0.001
+            tm = timeout * delay
+
+            self.arm_dbg.start_execution_no_catch()
+            while not self.arm_dbg.breakpoint_hit and tm > 0:
+                time.sleep(delay)
+                tm -= delay
+
+            if tm <= 0:
+                self.timed_out = True
+
+        except unicorn.UcError as e:
+            self.got_exception = True
+            self.error_message = e
+            self.error_register_state = self.arm_dbg.context_registers_str()
+
+        self.arm_dbg.stop()
 
 if __name__ == "__main__":
 
