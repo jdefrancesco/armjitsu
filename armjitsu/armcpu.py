@@ -158,11 +158,9 @@ class ArmCPU(object):
 
     def start_execution(self):
         """Starts execution."""
-
         try:
             if self.thumb_mode:
                 self.start_addr |= 1
-
             self.emu.emu_start(self.start_addr, self.end_addr)
         except UcError as err:
             logger.critical("Error starting emulator. Shutting down...!")
@@ -234,7 +232,7 @@ class ArmCPU(object):
         """List breakpoints."""
         print "Breakpoints:"
         if self.instruction_breakpoints:
-            for break_addr, bp_id in self.instruction_break_points:
+            for break_addr, bp_id in self.instruction_breakpoints.iteritems():
                 print "{}: 0x{:08x}".format(bp_id, break_addr)
         else:
             print "No breakpoints currently set."
@@ -242,7 +240,7 @@ class ArmCPU(object):
     def full_disassembly(self):
         """Disassemble entire ARM binary at once and displays results in list dict self.disassembly."""
         code = self.code
-        address = self.saved_start
+        address = self.code_start_addr
         md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
         self.disassembly = { inst.address: (inst.mnemonic, inst.op_str, inst.size)  for inst in md.disasm(code, self.saved_start) }
 
@@ -325,7 +323,6 @@ class ArmCPU(object):
         for k_seg_name, v_map_list in self.mem_regions.iteritems():
             code, addr, size = v_map_list
             self._emu_mem_map(k_seg_name, addr, code, size)
-
 
     def _load_elf_binary_img(self):
         elf_entry = 0
