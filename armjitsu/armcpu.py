@@ -349,12 +349,6 @@ class ArmCPU(object):
         self.start_addr = elf_entry
         self.code_start_addr = elf_entry
 
-    def _load_elf_binary_img(self):
-        file_name = self.file_name
-        with open(file_name, "rb") as f:
-            elf_file = ELFFile(f)
-            pass
-
     def _load_ini_snapshot(self):
         self.snapshot = snapshot.Snapshot(self.file_name, True)
         self._init_snapshot_memory()
