@@ -30,7 +30,7 @@ def main_code_hook(uc, address, size, emu):
         emu.stop_execution(next_pc=address)
         return
 
-    if insn:
+    if not emu.hide_instructions and insn:
         print "0x{:08x}: {:s} {:s}".format(insn.address, insn.mnemonic, insn.op_str)
 
     # Check for breakpoints
@@ -47,4 +47,4 @@ def main_code_hook(uc, address, size, emu):
 
 
 def mem_unmapped_hook(uc, address, size, emu):
-    pass
+    return True
