@@ -103,3 +103,4 @@ ENV/
 # Rope project settings
 .ropeproject
 .DS_Store
+._DS_Store 
