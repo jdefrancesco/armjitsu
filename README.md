@@ -1,9 +1,5 @@
-<<<<<<< HEAD
-### Prototype ARM Emulator - ARMGITSU
-
-=======
 ### Prototype ARM Emulator - ARMJITSU
->>>>>>> cc4c79c383314cf75db184571ec464a7cf6d2513
+
 
 This is a prototype ARM emulator based on the unicorn engine. It isn't actively developed or maintained.
 
