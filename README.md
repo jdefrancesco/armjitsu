@@ -1,13 +1,6 @@
-### Prototype ARM Emulator - ARMGITSU
+### Prototype ARM Emulator - ARMJITSU
 
-
-# WARNING
-**Because I was informed of dead line so suddenly, the code needs major refactoring.**
-**A lot of this code is axcting just as PoC to meet the deadline. It is functional but not well tested.**
-**Next revision, with additional funding, I plan to implement the rest of the code-base as I had originally envisioned.**
-
-# YET ANOTHER WARNING: DOCUMENT IS FAR OUT OF DATE, WILL UPDATE SOON
-
+This is a prototype ARM emulator based on the unicorn engine. It isn't actively developed or maintained.
 
 # Getting started:
 
