@@ -3,6 +3,8 @@
 
 This is a prototype ARM emulator based on the unicorn engine. It isn't actively developed or maintained.
 
+![Armjitsu](https://i.imgur.com/b3UxY6z.png)
+
 # Getting started:
 
 ARMjitsu is an ARM emulator based on the Unicorn emulation engine. The project is written in Python, it essentially provides a front-end for the core emulation
